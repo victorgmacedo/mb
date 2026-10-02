@@ -50,6 +50,7 @@ public class PostgresLedgerConfig {
         properties.put("hibernate.hbm2ddl.auto", env("MB_LEDGER_HBM2DDL_AUTO", "update"));
         properties.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
         properties.put("hibernate.show_sql", env("MB_LEDGER_SHOW_SQL", "false"));
+        properties.put("hibernate.bytecode.provider", "none");
         return properties;
     }
 
