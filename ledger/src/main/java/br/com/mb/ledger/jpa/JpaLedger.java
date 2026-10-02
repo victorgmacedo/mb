@@ -34,24 +34,32 @@ public class JpaLedger implements Ledger {
         Objects.requireNonNull(clientOrderId, "clientOrderId must not be null");
         Objects.requireNonNull(accountId, "accountId must not be null");
         Objects.requireNonNull(asset, "asset must not be null");
-
-        var existing = processedCommands.findByCommandTypeAndClientOrderId(ProcessedCommandEntity.FUNDING_CREDIT, clientOrderId);
-        if (existing.isPresent()) {
-            if (!existing.get().matchesFundingCredit(accountId, asset, amount)) {
-                throw new LedgerException("conflicting duplicate funding command");
-            }
-            return false;
+        if (amount <= 0) {
+            throw new LedgerException("amount must be positive");
         }
 
-        processedCommands.save(new ProcessedCommandEntity(
+        var inserted = processedCommands.insertIfAbsent(
             ProcessedCommandEntity.FUNDING_CREDIT,
             clientOrderId,
             accountId.value(),
             asset.symbol(),
             amount
-        ));
-        balanceForUpdate(accountId, asset).credit(amount);
-        return true;
+        );
+        if (inserted == 1) {
+            balanceForUpdate(accountId, asset).credit(amount);
+            return true;
+        }
+
+        var existing = processedCommands.findByCommandTypeAndClientOrderId(ProcessedCommandEntity.FUNDING_CREDIT, clientOrderId)
+            .orElseThrow(() -> new LedgerException("processed funding command not found after conflict"));
+        if (!existing.matchesFundingCredit(accountId, asset, amount)) {
+            throw new LedgerException("conflicting duplicate funding command");
+        }
+        if (inserted == 0) {
+            return false;
+        }
+
+        throw new LedgerException("unexpected funding idempotency insert result");
     }
 
     @Override

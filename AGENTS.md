@@ -90,7 +90,6 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 ## Pendências Mapeadas
 
 - atomicidade/reconciliação entre alteração do book em memória e liquidação no ledger
-- tratamento de corrida simultânea ao persistir o mesmo funding por `ClOrdID(11)`
 - prevenção de self-trade
 - snapshots e replay
 - eventos contábeis persistidos/publicados para liquidação
