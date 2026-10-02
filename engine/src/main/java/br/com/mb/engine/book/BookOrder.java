@@ -53,4 +53,15 @@ public final class BookOrder {
     public long remainingQuantity() {
         return remainingQuantity;
     }
+
+    void fill(long quantity) {
+        if (quantity <= 0 || quantity > remainingQuantity) {
+            throw new IllegalArgumentException("fill quantity must be positive and not exceed remaining quantity");
+        }
+        remainingQuantity -= quantity;
+    }
+
+    boolean isFilled() {
+        return remainingQuantity == 0;
+    }
 }

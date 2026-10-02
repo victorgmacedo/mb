@@ -1,13 +1,19 @@
 package br.com.mb.engine.command;
 
-public record EngineCommandResult(boolean accepted, String key, String detail, String eventFixMessage) {
+import java.util.List;
 
-    public static EngineCommandResult accepted(String key, String commandType, String eventFixMessage) {
-        return new EngineCommandResult(true, key, commandType, eventFixMessage);
+public record EngineCommandResult(boolean accepted, String key, String detail, List<String> eventFixMessages) {
+
+    public EngineCommandResult {
+        eventFixMessages = List.copyOf(eventFixMessages);
     }
 
-    public static EngineCommandResult rejected(String key, String reason, String eventFixMessage) {
-        return new EngineCommandResult(false, key, reason, eventFixMessage);
+    public static EngineCommandResult accepted(String key, String commandType, List<String> eventFixMessages) {
+        return new EngineCommandResult(true, key, commandType, eventFixMessages);
+    }
+
+    public static EngineCommandResult rejected(String key, String reason, List<String> eventFixMessages) {
+        return new EngineCommandResult(false, key, reason, eventFixMessages);
     }
 
     public String line() {

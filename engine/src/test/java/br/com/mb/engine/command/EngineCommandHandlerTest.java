@@ -28,8 +28,8 @@ class EngineCommandHandlerTest {
         assertEquals("account-A", result.key());
         assertEquals("NewOrderSingleCommand", result.detail());
         assertEquals(
-            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=account-A\u000111=order-1\u000117=accepted-order-1\u0001150=0\u000139=0\u000158=Order accepted\u0001",
-            result.eventFixMessage()
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=account-A\u000111=order-1\u000117=accepted-order-1\u0001150=0\u000139=0\u000131=0\u000132=0\u0001151=0\u000158=Order accepted\u0001",
+            result.eventFixMessages().getFirst()
         );
     }
 
@@ -44,7 +44,7 @@ class EngineCommandHandlerTest {
         assertEquals("FIX message requires BeginString(8)", result.detail());
         assertEquals(
             "8=FIX.4.4\u000135=j\u000149=engine\u000156=account-A\u000158=FIX message requires BeginString(8)\u0001",
-            result.eventFixMessage()
+            result.eventFixMessages().getFirst()
         );
     }
 
@@ -91,8 +91,62 @@ class EngineCommandHandlerTest {
         assertEquals("events", publisher.messages().get(1).topic());
         assertEquals("account-A", publisher.messages().get(1).key());
         assertEquals(
-            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=gateway\u000111=order-1\u000117=accepted-order-1\u0001150=4\u000139=4\u000158=Order cancelled\u0001",
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=gateway\u000111=order-1\u000117=accepted-order-1\u0001150=4\u000139=4\u000131=0\u000132=0\u0001151=0\u000158=Order cancelled\u0001",
             publisher.messages().get(1).value()
+        );
+    }
+
+    @Test
+    void publishesMakerAndTakerFillEventsWhenOrderMatches() {
+        var publisher = new RecordingPublisher();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+        handler.handle(new CommandMessage(
+            "commands",
+            "seller-A",
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=seller-A|11=sell-1|55=BTC/BRL|54=2|44=100|38=10|"
+        ));
+
+        handler.handle(new CommandMessage(
+            "commands",
+            "buyer-A",
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=buyer-A|11=buy-1|55=BTC/BRL|54=1|44=110|38=10|"
+        ));
+
+        assertEquals(3, publisher.messages().size());
+        assertEquals(
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=seller-A\u000111=sell-1\u000117=trade-buy-1-1-maker\u0001150=F\u000139=2\u000131=100\u000132=10\u0001151=0\u000158=Maker fill\u0001",
+            publisher.messages().get(1).value()
+        );
+        assertEquals(
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=buyer-A\u000111=buy-1\u000117=trade-buy-1-1-taker\u0001150=F\u000139=2\u000131=100\u000132=10\u0001151=0\u000158=Taker fill\u0001",
+            publisher.messages().get(2).value()
+        );
+    }
+
+    @Test
+    void rejectsCancelForFilledMakerOrder() {
+        var publisher = new RecordingPublisher();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+        handler.handle(new CommandMessage(
+            "commands",
+            "seller-A",
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=seller-A|11=sell-1|55=BTC/BRL|54=2|44=100|38=10|"
+        ));
+        handler.handle(new CommandMessage(
+            "commands",
+            "buyer-A",
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=buyer-A|11=buy-1|55=BTC/BRL|54=1|44=110|38=10|"
+        ));
+
+        handler.handle(new CommandMessage(
+            "commands",
+            "seller-A",
+            "8=FIX.4.4|35=F|49=gateway|56=engine|1=seller-A|11=cancel-1|41=sell-1|"
+        ));
+
+        assertEquals(
+            "8=FIX.4.4\u000135=j\u000149=engine\u000156=seller-A\u000158=open order not found: sell-1\u0001",
+            publisher.messages().getLast().value()
         );
     }
 

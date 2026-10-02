@@ -35,7 +35,9 @@ public final class EngineCommandHandler implements CommandHandler {
     @Override
     public void handle(CommandMessage message) {
         var result = classify(message);
-        eventPublisher.publish(new CommandMessage(eventsTopic, message.key(), result.eventFixMessage()));
+        for (var eventFixMessage : result.eventFixMessages()) {
+            eventPublisher.publish(new CommandMessage(eventsTopic, message.key(), eventFixMessage));
+        }
         output.accept(result.line());
     }
 
@@ -45,7 +47,8 @@ public final class EngineCommandHandler implements CommandHandler {
             var fix = FixMessage.parse(message.value());
             var command = parser.parse(fix);
             if (command instanceof NewOrderSingleCommand) {
-                engineState.place(orderIntake.accept(command));
+                var placement = engineState.place(orderIntake.accept(command));
+                return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted((NewOrderSingleCommand) command, placement));
             } else if (command instanceof CancelOrderCommand cancelOrder) {
                 engineState.cancel(cancelOrder);
             }

@@ -5,6 +5,7 @@ import br.com.mb.engine.domain.Instrument;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -21,6 +22,10 @@ public final class OrderBook {
     }
 
     public void add(Order order) {
+        place(order);
+    }
+
+    public PlacementResult place(Order order) {
         if (!instrument.equals(order.instrument())) {
             throw new InvalidOrderException("order instrument does not match book instrument");
         }
@@ -28,9 +33,15 @@ public final class OrderBook {
             throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
         }
 
-        var bookOrder = BookOrder.from(order);
-        sideFor(order.side()).add(bookOrder);
-        ordersByClientOrderId.put(order.clientOrderId(), bookOrder);
+        var taker = BookOrder.from(order);
+        var trades = match(taker);
+        if (!taker.isFilled()) {
+            sideFor(order.side()).add(taker);
+            ordersByClientOrderId.put(order.clientOrderId(), taker);
+            return new PlacementResult(trades, Optional.of(taker));
+        }
+
+        return new PlacementResult(trades, Optional.empty());
     }
 
     public BookOrder cancel(ClientOrderId clientOrderId) {
@@ -59,6 +70,52 @@ public final class OrderBook {
         return switch (side) {
             case BUY -> bids;
             case SELL -> asks;
+        };
+    }
+
+    private ArrayList<Trade> match(BookOrder taker) {
+        var trades = new ArrayList<Trade>();
+        var opposite = oppositeSideFor(taker.side());
+        while (!taker.isFilled()) {
+            var bestLevel = opposite.bestLevel();
+            if (bestLevel.isEmpty() || !crosses(taker, bestLevel.get().price())) {
+                break;
+            }
+
+            var maker = bestLevel.get().head();
+            var quantity = Math.min(taker.remainingQuantity(), maker.remainingQuantity());
+            maker.fill(quantity);
+            taker.fill(quantity);
+            trades.add(new Trade(
+                maker.accountId(),
+                maker.clientOrderId(),
+                taker.accountId(),
+                taker.clientOrderId(),
+                maker.price(),
+                quantity,
+                maker.remainingQuantity(),
+                taker.remainingQuantity()
+            ));
+
+            if (maker.isFilled()) {
+                opposite.remove(maker);
+                ordersByClientOrderId.remove(maker.clientOrderId());
+            }
+        }
+        return trades;
+    }
+
+    private BookSide oppositeSideFor(Side side) {
+        return switch (side) {
+            case BUY -> asks;
+            case SELL -> bids;
+        };
+    }
+
+    private static boolean crosses(BookOrder taker, long makerPrice) {
+        return switch (taker.side()) {
+            case BUY -> taker.price() >= makerPrice;
+            case SELL -> taker.price() <= makerPrice;
         };
     }
 }

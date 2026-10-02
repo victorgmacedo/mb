@@ -52,4 +52,4 @@ curl -i -X POST 'http://localhost:8080/commands' \
 
 For local readability the gateway accepts `|` as a field delimiter and normalizes it to the FIX SOH delimiter before publishing to Kafka.
 
-The engine currently consumes `commands`, maps inbound FIX into typed engine commands, validates order intake for known instruments and positive price/quantity, stores accepted orders in an in-memory order book by instrument, accepts cancel requests for open orders, publishes an acceptance or rejection FIX message to `events`, and prints the processing result. Matching and ledger updates are intentionally not implemented yet.
+The engine currently consumes `commands`, maps inbound FIX into typed engine commands, validates order intake for known instruments and positive price/quantity, stores accepted orders in an in-memory order book by instrument, performs basic limit-order matching with price-time priority, accepts cancel requests for open orders, publishes FIX execution reports to `events`, and prints the processing result. Ledger updates are intentionally not implemented yet.

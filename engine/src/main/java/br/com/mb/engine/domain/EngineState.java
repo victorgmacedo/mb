@@ -1,6 +1,7 @@
 package br.com.mb.engine.domain;
 
 import br.com.mb.engine.book.OrderBook;
+import br.com.mb.engine.book.PlacementResult;
 import br.com.mb.engine.command.CancelOrderCommand;
 import java.util.HashMap;
 import java.util.Map;
@@ -10,10 +11,14 @@ public final class EngineState {
     private final Map<Instrument, OrderBook> books = new HashMap<>();
     private final Map<ClientOrderId, OrderBook> orderLocations = new HashMap<>();
 
-    public void place(Order order) {
+    public PlacementResult place(Order order) {
         var book = books.computeIfAbsent(order.instrument(), OrderBook::new);
-        book.add(order);
-        orderLocations.put(order.clientOrderId(), book);
+        var result = book.place(order);
+        result.trades().stream()
+            .filter(trade -> trade.makerLeavesQuantity() == 0)
+            .forEach(trade -> orderLocations.remove(trade.makerClientOrderId()));
+        result.restingOrder().ifPresent(restingOrder -> orderLocations.put(restingOrder.clientOrderId(), book));
+        return result;
     }
 
     public void cancel(CancelOrderCommand command) {
