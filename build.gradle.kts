@@ -6,7 +6,7 @@ plugins {
 group = "br.com.mb"
 version = "0.1.0-SNAPSHOT"
 
-val javaVersion = JavaLanguageVersion.of(27)
+val javaVersion = JavaLanguageVersion.of(26)
 val slf4jVersion = "2.0.20"
 val logbackVersion = "1.6.5"
 val logstashLogbackEncoderVersion = "9.0"
@@ -26,7 +26,7 @@ subprojects {
 
     tasks.withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
-        options.release.set(27)
+        options.release.set(26)
     }
 
     tasks.named<JavaCompile>("compileJava").configure {

@@ -14,7 +14,7 @@ public final class GatewayApplication {
     private GatewayApplication() {
     }
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         var environment = System.getenv();
         TelemetryContext.setServiceName(LoggingConfig.serviceName(environment, "mb-gateway"));
         var config = GatewayConfig.fromEnvironment(environment);
