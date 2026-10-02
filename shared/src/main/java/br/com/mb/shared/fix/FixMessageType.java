@@ -2,7 +2,9 @@ package br.com.mb.shared.fix;
 
 public enum FixMessageType {
     NEW_ORDER_SINGLE("D"),
-    ORDER_CANCEL_REQUEST("F");
+    ORDER_CANCEL_REQUEST("F"),
+    EXECUTION_REPORT("8"),
+    BUSINESS_MESSAGE_REJECT("j");
 
     private final String tagValue;
 

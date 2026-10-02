@@ -1,5 +1,6 @@
 package br.com.mb.engine.command;
 
+import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.commandlog.CommandHandler;
 import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.shared.fix.FixMessage;
@@ -9,24 +10,35 @@ import java.util.function.Consumer;
 
 public final class EngineCommandHandler implements CommandHandler {
 
+    private final CommandPublisher eventPublisher;
+    private final String eventsTopic;
     private final Consumer<String> output;
+    private final EngineCommandParser parser;
+    private final EngineEventFactory eventFactory;
 
-    public EngineCommandHandler(Consumer<String> output) {
+    public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
+        this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher must not be null");
+        this.eventsTopic = Objects.requireNonNull(eventsTopic, "eventsTopic must not be null");
         this.output = Objects.requireNonNull(output, "output must not be null");
+        this.parser = new EngineCommandParser();
+        this.eventFactory = new EngineEventFactory();
     }
 
     @Override
     public void handle(CommandMessage message) {
-        output.accept(classify(message).line());
+        var result = classify(message);
+        eventPublisher.publish(new CommandMessage(eventsTopic, message.key(), result.eventFixMessage()));
+        output.accept(result.line());
     }
 
     public EngineCommandResult classify(CommandMessage message) {
         Objects.requireNonNull(message, "message must not be null");
         try {
             var fix = FixMessage.parse(message.value());
-            return EngineCommandResult.accepted(message.key(), fix.messageType().name());
+            var command = parser.parse(fix);
+            return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted(command));
         } catch (InvalidFixMessageException exception) {
-            return EngineCommandResult.rejected(message.key(), exception.getMessage());
+            return EngineCommandResult.rejected(message.key(), exception.getMessage(), eventFactory.rejected(message.key(), exception.getMessage()));
         }
     }
 }

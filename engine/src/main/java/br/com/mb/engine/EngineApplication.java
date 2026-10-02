@@ -1,6 +1,7 @@
 package br.com.mb.engine;
 
 import br.com.mb.commandlog.kafka.KafkaCommandConsumer;
+import br.com.mb.commandlog.kafka.KafkaCommandPublisher;
 import br.com.mb.engine.command.EngineCommandHandler;
 import br.com.mb.engine.config.EngineConfig;
 
@@ -16,9 +17,13 @@ public final class EngineApplication {
             config.consumerGroupId(),
             config.commandsTopic()
         );
-        var handler = new EngineCommandHandler(System.out::println);
+        var eventPublisher = KafkaCommandPublisher.connect(config.bootstrapServers(), "mb-engine-events");
+        var handler = new EngineCommandHandler(eventPublisher, config.eventsTopic(), System.out::println);
 
-        Runtime.getRuntime().addShutdownHook(new Thread(consumer::close));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            consumer.close();
+            eventPublisher.close();
+        }));
 
         while (!Thread.currentThread().isInterrupted()) {
             consumer.poll(handler);
