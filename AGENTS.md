@@ -97,15 +97,55 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Pendências Mapeadas
 
-- reconciliação de liquidações rejeitadas pelo consumidor
-- prevenção de self-trade
-- persistência/restore de snapshots Protobuf do book
-- eventos contábeis persistidos/publicados para liquidação
+- snapshots reais do book:
+  - persistir snapshot Protobuf em PostgreSQL usando payload binário, por exemplo `bytea`
+  - guardar metadados de instrumento, partição, offset final do `book-journal`, versão do schema e timestamps operacionais
+  - no startup, carregar o último snapshot válido e replayar apenas o trecho posterior do `book-journal`
+  - definir compactação/retenção segura do `book-journal`
+- consistência engine/ledger:
+  - reconciliar liquidações rejeitadas pelo consumidor
+  - criar persistência de eventos/instruções de liquidação com status
+  - definir política de retry, DLQ e compensação
+  - verificar consistência entre book recuperado e saldos `locked`
+- matching mais completo:
+  - prevenção de self-trade
+  - avaliar suporte a market, IOC, FOK e post-only
+  - melhorar controle de status parcial/final
+  - garantir execução determinística por instrumento/partição
+- gateway FIX mais robusto:
+  - validação FIX mais próxima do protocolo
+  - session handling se evoluir para FIX real, incluindo logon/logout, heartbeat, sequência e resend
+  - autenticação/autorização de contas
+- escala por instrumento:
+  - definir particionamento Kafka por instrumento
+  - garantir ownership de instrumento por pod
+  - implementar rebalance/recover quando um pod cai
+  - impedir que dois engines processem o mesmo instrumento ao mesmo tempo
+- persistência operacional:
+  - migrations com Flyway ou Liquibase
+  - schema explícito para ledger e snapshots
+  - índices, constraints e versionamento
+  - separar configurações dev/prod
+- observabilidade:
+  - logs estruturados
+  - métricas de latência de matching, profundidade do book, lag Kafka, rejeições e settlements pendentes
+  - health checks
+  - tracing entre gateway, engine e ledger
+- testes de integração:
+  - Testcontainers para Kafka/PostgreSQL
+  - teste end-to-end de gateway -> commands -> engine -> settlements/events -> ledger
+  - teste de recovery com replay
+  - teste de idempotência com mensagens duplicadas
+  - teste de concorrência no ledger
+- hardening:
+  - graceful shutdown
+  - backpressure
+  - retry Kafka
+  - DLQ para mensagens inválidas
+  - segurança de secrets
+  - Dockerfiles por módulo
+  - pipeline CI
 
 ## Próximo Trabalho Provável
 
-A próxima fase grande deve endurecer consistência e replay:
-
-- estratégia de reconciliação quando uma liquidação falhar após matching
-- persistência/restore de snapshots Protobuf do book para reduzir tempo de recover
-- eventos contábeis de liquidação
+A próxima implementação recomendada é persistir snapshots Protobuf do book no PostgreSQL e alterar o startup do engine para restaurar o último snapshot válido antes de replayar o `book-journal`. Isso fecha o fluxo de recover performático já iniciado com o codec Protobuf, sem misturar banco de dados no caminho quente do matching.
