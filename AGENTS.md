@@ -16,7 +16,7 @@ Módulos:
 - `shared`: parsing FIX e pequenos value objects compartilhados.
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
-- `engine`: consome comandos FIX, valida intake, mantém order books em memória, executa matching básico e publica eventos FIX.
+- `engine`: consome comandos FIX, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico e publica eventos FIX.
 - `ledger`: domínio inicial de saldos em memória com `available`, `locked`, reserva, liberação e liquidação.
 
 O pacote base padrão é `br.com.mb`.
@@ -36,11 +36,14 @@ flowchart LR
 - Suporta FIX inbound `35=D` NewOrderSingle e `35=F` OrderCancelRequest.
 - Mantém um `OrderBook` em memória por instrumento.
 - Instrumentos conhecidos atualmente: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`.
+- O catálogo do engine mapeia instrumento para base/cotação.
+- Antes do matching, compra reserva `price * quantity` no ativo de cotação e venda reserva `quantity` no ativo base.
+- Cancelamento aceito libera a reserva restante da ordem aberta.
 - Usa prioridade preço-tempo.
 - Usa preço do maker para trades.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não integra saldo/ledger ao fluxo do engine. Também não implementa prevenção de self-trade, snapshots ou replay.
+- Ainda não liquida trades no ledger. Também não implementa comandos de funding, prevenção de self-trade, snapshots ou replay.
 
 ## Comportamento Atual do Ledger
 
@@ -74,11 +77,18 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 - `feat: store accepted orders in memory book`
 - `feat: match limit orders in memory book`
 
+## Pendências Mapeadas
+
+- comando/evento de funding para creditar/debitar contas em runtime
+- liquidação dos trades no ledger após matching
+- liberação de sobras do taker após fills
+- liberação de diferença de quote por price improvement em compras
+- teste de conservação de ativos atravessando engine e ledger
+
 ## Próximo Trabalho Provável
 
-A próxima fase grande deve integrar ledger/reserva de saldo ao engine:
+A próxima fase grande deve concluir a integração de liquidação entre engine e ledger:
 
-- reserva de quote para compras e base para vendas antes do matching
 - liquidação após trades
 - liberação de sobras e diferenças por price improvement
-- teste de conservação de ativos atravessando engine e ledger
+- comando/evento de funding para permitir uso real do runtime local

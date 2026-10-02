@@ -1,6 +1,7 @@
 dependencies {
     implementation(project(":shared"))
     implementation(project(":command-log"))
+    implementation(project(":ledger"))
 }
 
 tasks.register<JavaExec>("runEngine") {

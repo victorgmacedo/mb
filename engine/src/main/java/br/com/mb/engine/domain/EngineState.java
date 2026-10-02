@@ -2,6 +2,7 @@ package br.com.mb.engine.domain;
 
 import br.com.mb.engine.book.OrderBook;
 import br.com.mb.engine.book.PlacementResult;
+import br.com.mb.engine.book.BookOrder;
 import br.com.mb.engine.command.CancelOrderCommand;
 import java.util.HashMap;
 import java.util.Map;
@@ -21,13 +22,13 @@ public final class EngineState {
         return result;
     }
 
-    public void cancel(CancelOrderCommand command) {
+    public BookOrder cancel(CancelOrderCommand command) {
         var originalClientOrderId = new ClientOrderId(command.originalClientOrderId());
         var book = orderLocations.remove(originalClientOrderId);
         if (book == null) {
             throw new InvalidOrderException("open order not found: " + originalClientOrderId.value());
         }
-        book.cancel(originalClientOrderId);
+        return book.cancel(originalClientOrderId);
     }
 
     public OrderBook book(Instrument instrument) {
