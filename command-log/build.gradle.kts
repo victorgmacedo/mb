@@ -1,0 +1,4 @@
+dependencies {
+    implementation(project(":shared"))
+    implementation("org.apache.kafka:kafka-clients:4.3.1")
+}
