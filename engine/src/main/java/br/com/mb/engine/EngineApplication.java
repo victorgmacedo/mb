@@ -10,14 +10,21 @@ import br.com.mb.engine.journal.BookJournalReplayer;
 import br.com.mb.engine.journal.KafkaBookJournal;
 import br.com.mb.engine.journal.KafkaSettlementJournal;
 import br.com.mb.ledger.jpa.PostgresLedgerFactory;
+import br.com.mb.shared.logging.LoggingConfig;
+import br.com.mb.shared.logging.StructuredLogger;
+import br.com.mb.shared.logging.TelemetryContext;
 
 public final class EngineApplication {
+
+    private static final StructuredLogger LOG = StructuredLogger.forClass(EngineApplication.class);
 
     private EngineApplication() {
     }
 
     public static void main(String[] args) {
-        var config = EngineConfig.fromEnvironment(System.getenv());
+        var environment = System.getenv();
+        TelemetryContext.setServiceName(LoggingConfig.serviceName(environment, "mb-engine"));
+        var config = EngineConfig.fromEnvironment(environment);
         var consumer = KafkaCommandConsumer.connect(
             config.bootstrapServers(),
             config.consumerGroupId(),
@@ -33,7 +40,7 @@ public final class EngineApplication {
         var handler = new EngineCommandHandler(
             eventPublisher,
             config.eventsTopic(),
-            System.out::println,
+            line -> LOG.info("engine.command.handled", "result", line),
             ledger,
             settlementJournal,
             bookJournal,
@@ -41,12 +48,22 @@ public final class EngineApplication {
         );
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            LOG.info("engine.shutdown");
             consumer.close();
             eventPublisher.close();
             settlementPublisher.close();
             bookJournalPublisher.close();
         }));
 
+        LOG.info(
+            "engine.start",
+            "commands_topic", config.commandsTopic(),
+            "events_topic", config.eventsTopic(),
+            "settlements_topic", config.settlementsTopic(),
+            "book_journal_topic", config.bookJournalTopic(),
+            "consumer_group_id", config.consumerGroupId(),
+            "bootstrap_servers", config.bootstrapServers()
+        );
         while (!Thread.currentThread().isInterrupted()) {
             consumer.poll(handler);
         }
@@ -56,10 +73,11 @@ public final class EngineApplication {
         try (var replayer = KafkaTopicReplayer.connect(config.bootstrapServers(), "mb-engine-book-recovery")) {
             var messages = replayer.replay(config.bookJournalTopic());
             var state = new BookJournalReplayer(InstrumentCatalog.defaultCatalog()).replay(messages);
-            System.out.printf("RECOVERED bookJournalTopic=%s messages=%d openOrders=%d%n",
-                config.bookJournalTopic(),
-                messages.size(),
-                state.openOrders().size()
+            LOG.info(
+                "engine.book.recovered",
+                "book_journal_topic", config.bookJournalTopic(),
+                "messages", messages.size(),
+                "open_orders", state.openOrders().size()
             );
             return state;
         }
