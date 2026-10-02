@@ -1,6 +1,7 @@
 package br.com.mb.engine.book;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.TreeMap;
@@ -42,5 +43,11 @@ final class BookSide {
             return Optional.empty();
         }
         return Optional.of(levels.firstEntry().getValue());
+    }
+
+    List<BookOrder> openOrders() {
+        return levels.values().stream()
+            .flatMap(level -> level.orders().stream())
+            .toList();
     }
 }

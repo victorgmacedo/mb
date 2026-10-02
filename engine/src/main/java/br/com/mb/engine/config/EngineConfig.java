@@ -7,6 +7,7 @@ public record EngineConfig(
     String commandsTopic,
     String eventsTopic,
     String settlementsTopic,
+    String bookJournalTopic,
     String consumerGroupId
 ) {
 
@@ -16,6 +17,7 @@ public record EngineConfig(
             environment.getOrDefault("KAFKA_COMMANDS_TOPIC", "commands"),
             environment.getOrDefault("KAFKA_EVENTS_TOPIC", "events"),
             environment.getOrDefault("KAFKA_SETTLEMENTS_TOPIC", "settlements"),
+            environment.getOrDefault("KAFKA_BOOK_JOURNAL_TOPIC", "book-journal"),
             environment.getOrDefault("ENGINE_CONSUMER_GROUP_ID", "mb-engine")
         );
     }

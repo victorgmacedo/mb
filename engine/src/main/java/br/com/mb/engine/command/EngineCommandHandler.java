@@ -8,7 +8,10 @@ import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.OrderIntake;
+import br.com.mb.engine.domain.ClientOrderId;
+import br.com.mb.engine.journal.BookJournal;
 import br.com.mb.engine.journal.ExecutionJournal;
+import br.com.mb.engine.journal.NoOpBookJournal;
 import br.com.mb.engine.journal.SynchronousLedgerJournal;
 import br.com.mb.engine.ledger.BalanceReservations;
 import br.com.mb.ledger.domain.AccountId;
@@ -32,6 +35,7 @@ public final class EngineCommandHandler implements CommandHandler {
     private final EngineState engineState;
     private final BalanceReservations balanceReservations;
     private final ExecutionJournal executionJournal;
+    private final BookJournal bookJournal;
     private final Ledger ledger;
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
@@ -54,15 +58,28 @@ public final class EngineCommandHandler implements CommandHandler {
         Ledger ledger,
         ExecutionJournal executionJournal
     ) {
+        this(eventPublisher, eventsTopic, output, ledger, executionJournal, new NoOpBookJournal(), new EngineState());
+    }
+
+    public EngineCommandHandler(
+        CommandPublisher eventPublisher,
+        String eventsTopic,
+        Consumer<String> output,
+        Ledger ledger,
+        ExecutionJournal executionJournal,
+        BookJournal bookJournal,
+        EngineState engineState
+    ) {
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher must not be null");
         this.eventsTopic = Objects.requireNonNull(eventsTopic, "eventsTopic must not be null");
         this.output = Objects.requireNonNull(output, "output must not be null");
         Objects.requireNonNull(ledger, "ledger must not be null");
+        this.engineState = Objects.requireNonNull(engineState, "engineState must not be null");
+        this.bookJournal = Objects.requireNonNull(bookJournal, "bookJournal must not be null");
         var instrumentCatalog = InstrumentCatalog.defaultCatalog();
         this.parser = new EngineCommandParser();
         this.eventFactory = new EngineEventFactory();
         this.orderIntake = new OrderIntake(instrumentCatalog);
-        this.engineState = new EngineState();
         this.balanceReservations = new BalanceReservations(instrumentCatalog, ledger);
         this.executionJournal = executionJournal == null
             ? new SynchronousLedgerJournal(balanceReservations)
@@ -86,7 +103,11 @@ public final class EngineCommandHandler implements CommandHandler {
             var command = parser.parse(fix);
             if (command instanceof NewOrderSingleCommand) {
                 var order = orderIntake.accept(command);
+                if (engineState.hasOpenOrder(order.clientOrderId())) {
+                    throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
+                }
                 balanceReservations.reserve(order);
+                bookJournal.appendAccepted(order);
                 PlacementResult placement;
                 try {
                     placement = engineState.place(order);
@@ -97,6 +118,10 @@ public final class EngineCommandHandler implements CommandHandler {
                 executionJournal.append(order, placement);
                 return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted((NewOrderSingleCommand) command, placement));
             } else if (command instanceof CancelOrderCommand cancelOrder) {
+                var originalClientOrderId = new ClientOrderId(cancelOrder.originalClientOrderId());
+                var openOrder = engineState.openOrder(originalClientOrderId)
+                    .orElseThrow(() -> new InvalidOrderException("open order not found: " + originalClientOrderId.value()));
+                bookJournal.appendCancelled(openOrder);
                 balanceReservations.release(engineState.cancel(cancelOrder));
             } else if (command instanceof FundingCreditCommand fundingCredit) {
                 credit(fundingCredit);

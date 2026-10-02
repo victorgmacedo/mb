@@ -1,5 +1,8 @@
 package br.com.mb.engine.book;
 
+import java.util.ArrayList;
+import java.util.List;
+
 final class PriceLevel {
 
     private final long price;
@@ -55,5 +58,15 @@ final class PriceLevel {
 
     long totalQuantity() {
         return totalQuantity;
+    }
+
+    List<BookOrder> orders() {
+        var orders = new ArrayList<BookOrder>();
+        var current = head;
+        while (current != null) {
+            orders.add(current);
+            current = current.next;
+        }
+        return orders;
     }
 }

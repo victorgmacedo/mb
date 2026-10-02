@@ -14,6 +14,7 @@ class EngineConfigTest {
             "KAFKA_COMMANDS_TOPIC", "custom-commands",
             "KAFKA_EVENTS_TOPIC", "custom-events",
             "KAFKA_SETTLEMENTS_TOPIC", "custom-settlements",
+            "KAFKA_BOOK_JOURNAL_TOPIC", "custom-book-journal",
             "ENGINE_CONSUMER_GROUP_ID", "engine-test"
         ));
 
@@ -21,6 +22,7 @@ class EngineConfigTest {
         assertEquals("custom-commands", config.commandsTopic());
         assertEquals("custom-events", config.eventsTopic());
         assertEquals("custom-settlements", config.settlementsTopic());
+        assertEquals("custom-book-journal", config.bookJournalTopic());
         assertEquals("engine-test", config.consumerGroupId());
     }
 
@@ -32,6 +34,7 @@ class EngineConfigTest {
         assertEquals("commands", config.commandsTopic());
         assertEquals("events", config.eventsTopic());
         assertEquals("settlements", config.settlementsTopic());
+        assertEquals("book-journal", config.bookJournalTopic());
         assertEquals("mb-engine", config.consumerGroupId());
     }
 }

@@ -6,7 +6,9 @@ import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -64,6 +66,20 @@ public final class OrderBook {
 
     public Optional<BookOrder> find(ClientOrderId clientOrderId) {
         return Optional.ofNullable(ordersByClientOrderId.get(clientOrderId));
+    }
+
+    public List<BookOrderView> openOrders() {
+        var orders = new ArrayList<BookOrder>();
+        orders.addAll(bids.openOrders());
+        orders.addAll(asks.openOrders());
+        return orders.stream()
+            .map(BookOrderView::from)
+            .sorted(Comparator
+                .comparing(BookOrderView::instrument)
+                .thenComparing(order -> order.side().name())
+                .thenComparing(BookOrderView::price)
+                .thenComparing(BookOrderView::clientOrderId))
+            .toList();
     }
 
     private BookSide sideFor(Side side) {

@@ -16,7 +16,7 @@ Módulos:
 - `shared`: parsing FIX e pequenos value objects compartilhados.
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
-- `engine`: consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka e publica eventos FIX.
+- `engine`: recupera book via `book-journal`, consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka e publica eventos FIX.
 - `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via Spring Data JPA.
 
 O pacote base padrão é `br.com.mb`.
@@ -31,6 +31,7 @@ flowchart LR
     Engine --> Postgres[(PostgreSQL ledger)]
     Engine --> Events[Kafka events]
     Engine --> Settlements[Kafka settlements]
+    Engine --> BookJournal[Kafka book-journal]
 ```
 
 ## Comportamento Atual do Engine
@@ -46,11 +47,13 @@ flowchart LR
 - Funding duplicado com mesmo `ClOrdID(11)` e payload divergente é rejeitado.
 - Usa prioridade preço-tempo.
 - Usa preço do maker para trades.
+- Persiste mutações aceitas do book no tópico `book-journal`: `35=U4` para ordem aceita e `35=U5` para cancelamento aceito.
+- No startup, o engine reconstrói `EngineState` por replay de `book-journal`.
 - Publica cada trade no tópico `settlements` como FIX-like `35=U2`.
 - Compra taker executada abaixo do preço limite publica liberação de price improvement como FIX-like `35=U3`.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não implementa prevenção de self-trade, snapshots ou replay.
+- Ainda não implementa prevenção de self-trade ou snapshots do book.
 
 ## Comportamento Atual do Ledger
 
@@ -94,7 +97,7 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 - reconciliação de liquidações rejeitadas pelo consumidor
 - prevenção de self-trade
-- snapshots e replay
+- snapshots do book
 - eventos contábeis persistidos/publicados para liquidação
 
 ## Próximo Trabalho Provável
@@ -102,5 +105,5 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 A próxima fase grande deve endurecer consistência e replay:
 
 - estratégia de reconciliação quando uma liquidação falhar após matching
-- snapshots/replay do book e comandos processados
+- snapshots do book para reduzir tempo de recover
 - eventos contábeis de liquidação

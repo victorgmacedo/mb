@@ -42,6 +42,15 @@ class FixMessageTest {
     }
 
     @Test
+    void parsesInternalBookJournalMessageTypes() {
+        var accepted = FixMessage.parse("8=FIX.4.4|35=U4|49=engine|56=engine|11=order-1|");
+        var cancelled = FixMessage.parse("8=FIX.4.4|35=U5|49=engine|56=engine|41=order-1|");
+
+        assertEquals(FixMessageType.BOOK_ORDER_ACCEPTED, accepted.messageType());
+        assertEquals(FixMessageType.BOOK_ORDER_CANCELLED, cancelled.messageType());
+    }
+
+    @Test
     void rejectsUnsupportedMessageType() {
         var exception = assertThrows(
             InvalidFixMessageException.class,

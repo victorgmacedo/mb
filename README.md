@@ -14,7 +14,7 @@ sdk use java 27.0.0-amzn
 rtk ./gradlew test
 ```
 
-O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, funding com idempotência persistida, reserva pré-matching no ledger PostgreSQL, journal Kafka de liquidação gerado pelo matching e consumidor assíncrono de liquidação no ledger. Snapshots e replay ainda serão adicionados em fases posteriores.
+O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, funding com idempotência persistida, reserva pré-matching no ledger PostgreSQL, journal Kafka de liquidação, consumer assíncrono de liquidação no ledger e recover do book por replay do `book-journal`. Snapshots ainda serão adicionados em fases posteriores para acelerar recover.
 
 ## Módulos
 
@@ -65,6 +65,6 @@ curl -i -X POST 'http://localhost:8080/commands' \
 
 Para facilitar testes locais, o gateway aceita `|` como delimitador e normaliza para SOH antes de publicar no Kafka.
 
-O engine consome `commands`, converte FIX inbound em comandos tipados, credita funding `35=U1` de forma idempotente pelo `ClOrdID(11)`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, publica instruções de liquidação FIX-like no tópico `settlements`, aceita cancelamentos de ordens abertas, libera reserva no cancelamento e publica ExecutionReports FIX em `events`.
+O engine consome `commands`, reconstrói o book no startup via replay do tópico `book-journal`, converte FIX inbound em comandos tipados, credita funding `35=U1` de forma idempotente pelo `ClOrdID(11)`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, persiste mutações aceitas do book no `book-journal`, publica instruções de liquidação FIX-like no tópico `settlements`, aceita cancelamentos de ordens abertas, libera reserva no cancelamento e publica ExecutionReports FIX em `events`.
 
 O ledger persiste saldos disponíveis/bloqueados em PostgreSQL. Funding, reserva pré-matching e cancelamento já estão conectados ao engine; o consumidor `runLedgerSettlements` aplica `U2/U3` do tópico `settlements` idempotentemente.
