@@ -3,6 +3,7 @@ module br.com.mb.ledger {
     requires br.com.mb.shared;
     requires jakarta.persistence;
     requires java.sql;
+    requires org.hibernate.orm.core;
     requires spring.beans;
     requires spring.context;
     requires spring.core;
