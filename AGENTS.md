@@ -48,6 +48,7 @@ flowchart LR
 - Usa prioridade preço-tempo.
 - Usa preço do maker para trades.
 - Persiste mutações aceitas do book no tópico `book-journal`: `35=U4` para ordem aceita e `35=U5` para cancelamento aceito.
+- Cada ordem aceita recebe `entrySequence` monotônico, publicado em `U4` como tag interna `10003`.
 - No startup, o engine reconstrói `EngineState` por replay de `book-journal`.
 - Publica cada trade no tópico `settlements` como FIX-like `35=U2`.
 - Compra taker executada abaixo do preço limite publica liberação de price improvement como FIX-like `35=U3`.

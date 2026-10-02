@@ -18,9 +18,9 @@ public final class KafkaBookJournal implements BookJournal {
     }
 
     @Override
-    public void appendAccepted(Order order) {
+    public void appendAccepted(Order order, long entrySequence) {
         Objects.requireNonNull(order, "order must not be null");
-        publisher.publish(new CommandMessage(topic, order.instrument().symbol(), acceptedFix(order)));
+        publisher.publish(new CommandMessage(topic, order.instrument().symbol(), acceptedFix(order, entrySequence)));
     }
 
     @Override
@@ -29,15 +29,19 @@ public final class KafkaBookJournal implements BookJournal {
         publisher.publish(new CommandMessage(topic, order.instrument().symbol(), cancelledFix(order)));
     }
 
-    private static String acceptedFix(Order order) {
-        return "8=FIX.4.4\u000135=U4\u000149=engine\u000156=engine\u00011=%s\u000111=%s\u000155=%s\u000154=%s\u000144=%d\u000138=%d\u0001"
+    private static String acceptedFix(Order order, long entrySequence) {
+        if (entrySequence <= 0) {
+            throw new IllegalArgumentException("entrySequence must be positive");
+        }
+        return "8=FIX.4.4\u000135=U4\u000149=engine\u000156=engine\u00011=%s\u000111=%s\u000155=%s\u000154=%s\u000144=%d\u000138=%d\u000110003=%d\u0001"
             .formatted(
                 sanitize(order.accountId().value()),
                 sanitize(order.clientOrderId().value()),
                 sanitize(order.instrument().symbol()),
                 sideTag(order.side()),
                 order.price(),
-                order.quantity()
+                order.quantity(),
+                entrySequence
             );
     }
 

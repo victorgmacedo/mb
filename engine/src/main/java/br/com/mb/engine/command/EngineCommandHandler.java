@@ -107,10 +107,11 @@ public final class EngineCommandHandler implements CommandHandler {
                     throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
                 }
                 balanceReservations.reserve(order);
-                bookJournal.appendAccepted(order);
+                var entrySequence = engineState.nextEntrySequence();
+                bookJournal.appendAccepted(order, entrySequence);
                 PlacementResult placement;
                 try {
-                    placement = engineState.place(order);
+                    placement = engineState.place(order, entrySequence);
                 } catch (InvalidOrderException exception) {
                     releaseUnsettled(order);
                     throw exception;

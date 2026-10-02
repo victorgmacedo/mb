@@ -8,6 +8,7 @@ public record BookOrderView(
     String instrument,
     Side side,
     long price,
+    long entrySequence,
     long remainingQuantity
 ) {
 
@@ -18,6 +19,7 @@ public record BookOrderView(
             order.instrument().symbol(),
             order.side(),
             order.price(),
+            order.entrySequence(),
             order.remainingQuantity()
         );
     }

@@ -38,7 +38,7 @@ public final class BookJournalReplayer {
                 OrderSide.fromFixValue(required(fix, 54, "Side")),
                 parseLong(required(fix, 44, "Price"), "Price(44)"),
                 parseLong(required(fix, 38, "OrderQty"), "OrderQty(38)")
-            )));
+            )), parseLong(required(fix, 10003, "EntrySequence"), "EntrySequence(10003)"));
             case BOOK_ORDER_CANCELLED -> state.cancel(new CancelOrderCommand(
                 fix.field(1).orElseGet(fix::kafkaKey),
                 required(fix, 41, "OrigClOrdID"),

@@ -5,7 +5,7 @@ import br.com.mb.engine.domain.Order;
 
 public interface BookJournal {
 
-    void appendAccepted(Order order);
+    void appendAccepted(Order order, long entrySequence);
 
     void appendCancelled(BookOrder order);
 }

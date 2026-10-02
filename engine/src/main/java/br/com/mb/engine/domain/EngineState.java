@@ -15,10 +15,16 @@ public final class EngineState {
 
     private final Map<Instrument, OrderBook> books = new HashMap<>();
     private final Map<ClientOrderId, OrderBook> orderLocations = new HashMap<>();
+    private long nextEntrySequence = 1;
 
     public PlacementResult place(Order order) {
+        return place(order, nextEntrySequence());
+    }
+
+    public PlacementResult place(Order order, long entrySequence) {
         var book = books.computeIfAbsent(order.instrument(), OrderBook::new);
-        var result = book.place(order);
+        var result = book.place(order, entrySequence);
+        advanceEntrySequencePast(entrySequence);
         result.trades().stream()
             .filter(trade -> trade.makerLeavesQuantity() == 0)
             .forEach(trade -> orderLocations.remove(trade.makerClientOrderId()));
@@ -60,5 +66,15 @@ public final class EngineState {
                 .thenComparing(BookOrderView::price)
                 .thenComparing(BookOrderView::clientOrderId))
             .toList();
+    }
+
+    public long nextEntrySequence() {
+        return nextEntrySequence++;
+    }
+
+    private void advanceEntrySequencePast(long entrySequence) {
+        if (entrySequence >= nextEntrySequence) {
+            nextEntrySequence = entrySequence + 1;
+        }
     }
 }

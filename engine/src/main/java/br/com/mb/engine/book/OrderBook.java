@@ -28,6 +28,10 @@ public final class OrderBook {
     }
 
     public PlacementResult place(Order order) {
+        return place(order, 0);
+    }
+
+    public PlacementResult place(Order order, long entrySequence) {
         if (!instrument.equals(order.instrument())) {
             throw new InvalidOrderException("order instrument does not match book instrument");
         }
@@ -35,7 +39,7 @@ public final class OrderBook {
             throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
         }
 
-        var taker = BookOrder.from(order);
+        var taker = BookOrder.from(order, entrySequence);
         var trades = match(taker);
         if (!taker.isFilled()) {
             sideFor(order.side()).add(taker);

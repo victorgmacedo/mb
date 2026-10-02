@@ -6,7 +6,7 @@ import br.com.mb.engine.domain.Order;
 public final class NoOpBookJournal implements BookJournal {
 
     @Override
-    public void appendAccepted(Order order) {
+    public void appendAccepted(Order order, long entrySequence) {
     }
 
     @Override

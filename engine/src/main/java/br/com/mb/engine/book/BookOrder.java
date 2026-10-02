@@ -13,21 +13,27 @@ public final class BookOrder {
     private final Instrument instrument;
     private final Side side;
     private final long price;
+    private final long entrySequence;
     private long remainingQuantity;
     BookOrder previous;
     BookOrder next;
 
-    private BookOrder(Order order) {
+    private BookOrder(Order order, long entrySequence) {
         this.accountId = order.accountId();
         this.clientOrderId = order.clientOrderId();
         this.instrument = order.instrument();
         this.side = order.side();
         this.price = order.price();
+        this.entrySequence = entrySequence;
         this.remainingQuantity = order.quantity();
     }
 
     public static BookOrder from(Order order) {
-        return new BookOrder(order);
+        return new BookOrder(order, 0);
+    }
+
+    public static BookOrder from(Order order, long entrySequence) {
+        return new BookOrder(order, entrySequence);
     }
 
     public AccountId accountId() {
@@ -48,6 +54,10 @@ public final class BookOrder {
 
     public long price() {
         return price;
+    }
+
+    public long entrySequence() {
+        return entrySequence;
     }
 
     public long remainingQuantity() {
