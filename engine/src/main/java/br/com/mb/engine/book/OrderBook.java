@@ -89,6 +89,7 @@ public final class OrderBook {
             trades.add(new Trade(
                 maker.accountId(),
                 maker.clientOrderId(),
+                maker.side(),
                 taker.accountId(),
                 taker.clientOrderId(),
                 maker.price(),

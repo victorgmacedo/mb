@@ -3,6 +3,7 @@ package br.com.mb.engine.command;
 import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.commandlog.CommandHandler;
 import br.com.mb.commandlog.CommandMessage;
+import br.com.mb.engine.book.PlacementResult;
 import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
@@ -15,7 +16,9 @@ import br.com.mb.ledger.jpa.PostgresLedgerFactory;
 import br.com.mb.shared.model.Asset;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 
 public final class EngineCommandHandler implements CommandHandler {
@@ -29,6 +32,7 @@ public final class EngineCommandHandler implements CommandHandler {
     private final EngineState engineState;
     private final BalanceReservations balanceReservations;
     private final Ledger ledger;
+    private final Set<String> creditedFundingClientOrderIds = new HashSet<>();
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
         this(eventPublisher, eventsTopic, output, PostgresLedgerFactory.create());
@@ -70,13 +74,15 @@ public final class EngineCommandHandler implements CommandHandler {
             if (command instanceof NewOrderSingleCommand) {
                 var order = orderIntake.accept(command);
                 balanceReservations.reserve(order);
+                PlacementResult placement;
                 try {
-                    var placement = engineState.place(order);
-                    return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted((NewOrderSingleCommand) command, placement));
+                    placement = engineState.place(order);
                 } catch (InvalidOrderException exception) {
-                    balanceReservations.release(br.com.mb.engine.book.BookOrder.from(order));
+                    releaseUnsettled(order);
                     throw exception;
                 }
+                balanceReservations.settle(order, placement);
+                return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted((NewOrderSingleCommand) command, placement));
             } else if (command instanceof CancelOrderCommand cancelOrder) {
                 balanceReservations.release(engineState.cancel(cancelOrder));
             } else if (command instanceof FundingCreditCommand fundingCredit) {
@@ -89,6 +95,13 @@ public final class EngineCommandHandler implements CommandHandler {
     }
 
     private void credit(FundingCreditCommand command) {
+        if (!creditedFundingClientOrderIds.add(command.clientOrderId())) {
+            return;
+        }
         ledger.credit(new AccountId(command.accountId()), new Asset(command.asset()), command.amount());
+    }
+
+    private void releaseUnsettled(br.com.mb.engine.domain.Order order) {
+        balanceReservations.release(br.com.mb.engine.book.BookOrder.from(order));
     }
 }

@@ -1,14 +1,19 @@
 package br.com.mb.engine.ledger;
 
 import br.com.mb.engine.book.BookOrder;
+import br.com.mb.engine.book.PlacementResult;
+import br.com.mb.engine.book.Trade;
 import br.com.mb.engine.domain.AccountId;
 import br.com.mb.engine.domain.Instrument;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.ListedInstrument;
 import br.com.mb.engine.domain.Order;
+import br.com.mb.engine.domain.Side;
 import br.com.mb.ledger.domain.Ledger;
 import br.com.mb.ledger.domain.LedgerException;
+import br.com.mb.ledger.domain.SettlementSide;
+import br.com.mb.ledger.domain.TradeSettlementInstruction;
 import java.util.Objects;
 
 public final class BalanceReservations {
@@ -47,6 +52,28 @@ public final class BalanceReservations {
         }
     }
 
+    public void settle(Order takerOrder, PlacementResult placement) {
+        Objects.requireNonNull(takerOrder, "takerOrder must not be null");
+        Objects.requireNonNull(placement, "placement must not be null");
+        var listing = listing(takerOrder.instrument());
+        try {
+            for (var trade : placement.trades()) {
+                ledger.settle(new TradeSettlementInstruction(
+                    account(trade.makerAccountId()),
+                    account(trade.takerAccountId()),
+                    settlementSide(trade.makerSide()),
+                    listing.baseAsset(),
+                    listing.quoteAsset(),
+                    trade.price(),
+                    trade.quantity()
+                ));
+                releaseTakerPriceImprovement(takerOrder, listing, trade);
+            }
+        } catch (LedgerException exception) {
+            throw new InvalidOrderException(exception.getMessage());
+        }
+    }
+
     private ListedInstrument listing(Instrument instrument) {
         return instrumentCatalog.findListing(instrument)
             .orElseThrow(() -> new InvalidOrderException("unknown instrument: " + instrument.symbol()));
@@ -54,6 +81,24 @@ public final class BalanceReservations {
 
     private static br.com.mb.ledger.domain.AccountId account(AccountId accountId) {
         return new br.com.mb.ledger.domain.AccountId(accountId.value());
+    }
+
+    private void releaseTakerPriceImprovement(Order takerOrder, ListedInstrument listing, Trade trade) {
+        if (takerOrder.side() != Side.BUY || takerOrder.price() == trade.price()) {
+            return;
+        }
+        ledger.release(
+            account(takerOrder.accountId()),
+            listing.quoteAsset(),
+            notional(takerOrder.price() - trade.price(), trade.quantity())
+        );
+    }
+
+    private static SettlementSide settlementSide(Side side) {
+        return switch (side) {
+            case BUY -> SettlementSide.BUY;
+            case SELL -> SettlementSide.SELL;
+        };
     }
 
     private static long notional(long price, long quantity) {
