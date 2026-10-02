@@ -7,16 +7,16 @@ import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.ListedInstrument;
 import br.com.mb.engine.domain.Order;
-import br.com.mb.ledger.domain.InMemoryLedger;
+import br.com.mb.ledger.domain.Ledger;
 import br.com.mb.ledger.domain.LedgerException;
 import java.util.Objects;
 
 public final class BalanceReservations {
 
     private final InstrumentCatalog instrumentCatalog;
-    private final InMemoryLedger ledger;
+    private final Ledger ledger;
 
-    public BalanceReservations(InstrumentCatalog instrumentCatalog, InMemoryLedger ledger) {
+    public BalanceReservations(InstrumentCatalog instrumentCatalog, Ledger ledger) {
         this.instrumentCatalog = Objects.requireNonNull(instrumentCatalog, "instrumentCatalog must not be null");
         this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
     }

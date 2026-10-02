@@ -17,7 +17,7 @@ Módulos:
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
 - `engine`: consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico e publica eventos FIX.
-- `ledger`: domínio inicial de saldos em memória com `available`, `locked`, reserva, liberação e liquidação.
+- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e liquidação persistido em PostgreSQL via Spring Data JPA.
 
 O pacote base padrão é `br.com.mb`.
 
@@ -28,6 +28,7 @@ flowchart LR
     Client --> Gateway
     Gateway --> Commands[Kafka commands]
     Commands --> Engine
+    Engine --> Postgres[(PostgreSQL ledger)]
     Engine --> Events[Kafka events]
 ```
 
@@ -48,8 +49,12 @@ flowchart LR
 
 ## Comportamento Atual do Ledger
 
-- Mantém `LedgerAccount` por conta.
-- Mantém `AssetBalance` por ativo com buckets `available` e `locked`.
+- O runtime padrão usa `PostgresLedgerFactory` e `JpaLedger`.
+- Persistência em PostgreSQL na tabela `ledger_balances`.
+- Usa Spring Data JPA 4.1.x via Spring Boot BOM 4.1.1.
+- Configuração padrão local: `jdbc:postgresql://localhost:5432/mb`, usuário `mb`, senha `mb`.
+- Variáveis suportadas: `MB_LEDGER_JDBC_URL`, `MB_LEDGER_USERNAME`, `MB_LEDGER_PASSWORD`, `MB_LEDGER_HBM2DDL_AUTO`, `MB_LEDGER_SHOW_SQL`.
+- Mantém `AssetBalance` por conta/ativo com buckets `available` e `locked`.
 - `credit` aumenta saldo disponível.
 - `reserve` move saldo disponível para bloqueado.
 - `release` devolve saldo bloqueado para disponível.

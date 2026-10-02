@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:18
+    container_name: mb-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: "mb"
+      POSTGRES_USER: "mb"
+      POSTGRES_PASSWORD: "mb"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U mb -d mb" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   kafka:
     image: apache/kafka:4.3.1
     container_name: mb-kafka

@@ -1,4 +1,7 @@
 dependencies {
     implementation(project(":shared"))
     implementation(project(":command-log"))
+    implementation(platform("org.springframework.boot:spring-boot-dependencies:4.1.1"))
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    runtimeOnly("org.postgresql:postgresql")
 }

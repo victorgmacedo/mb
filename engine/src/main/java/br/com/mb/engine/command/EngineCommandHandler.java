@@ -9,8 +9,9 @@ import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.OrderIntake;
 import br.com.mb.engine.ledger.BalanceReservations;
 import br.com.mb.ledger.domain.AccountId;
-import br.com.mb.ledger.domain.InMemoryLedger;
+import br.com.mb.ledger.domain.Ledger;
 import br.com.mb.ledger.domain.LedgerException;
+import br.com.mb.ledger.jpa.PostgresLedgerFactory;
 import br.com.mb.shared.model.Asset;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
@@ -27,17 +28,17 @@ public final class EngineCommandHandler implements CommandHandler {
     private final OrderIntake orderIntake;
     private final EngineState engineState;
     private final BalanceReservations balanceReservations;
-    private final InMemoryLedger ledger;
+    private final Ledger ledger;
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
-        this(eventPublisher, eventsTopic, output, new InMemoryLedger());
+        this(eventPublisher, eventsTopic, output, PostgresLedgerFactory.create());
     }
 
     public EngineCommandHandler(
         CommandPublisher eventPublisher,
         String eventsTopic,
         Consumer<String> output,
-        InMemoryLedger ledger
+        Ledger ledger
     ) {
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher must not be null");
         this.eventsTopic = Objects.requireNonNull(eventsTopic, "eventsTopic must not be null");

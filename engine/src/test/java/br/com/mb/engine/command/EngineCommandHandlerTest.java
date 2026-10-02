@@ -8,10 +8,15 @@ import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.AssetBalance;
-import br.com.mb.ledger.domain.InMemoryLedger;
+import br.com.mb.ledger.domain.Ledger;
+import br.com.mb.ledger.domain.LedgerException;
+import br.com.mb.ledger.domain.TradeSettlementInstruction;
 import br.com.mb.shared.model.Asset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import org.junit.jupiter.api.Test;
 
 class EngineCommandHandlerTest {
@@ -39,7 +44,7 @@ class EngineCommandHandlerTest {
 
     @Test
     void rejectsInvalidFixCommandAndBuildsBusinessReject() {
-        var handler = new EngineCommandHandler(new RecordingPublisher(), "events", line -> {});
+        var handler = fundedHandler(new RecordingPublisher());
         var message = new CommandMessage("commands", "account-A", "35=D|49=gateway|");
 
         var result = handler.classify(message);
@@ -165,7 +170,7 @@ class EngineCommandHandlerTest {
     @Test
     void rejectsCancelForUnknownOpenOrder() {
         var publisher = new RecordingPublisher();
-        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+        var handler = fundedHandler(publisher);
         var message = new CommandMessage(
             "commands",
             "account-A",
@@ -184,7 +189,7 @@ class EngineCommandHandlerTest {
     @Test
     void rejectsNewOrderWhenAvailableBalanceIsInsufficient() {
         var publisher = new RecordingPublisher();
-        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+        var handler = fundedHandler(publisher);
         var message = new CommandMessage(
             "commands",
             "buyer-A",
@@ -203,7 +208,7 @@ class EngineCommandHandlerTest {
     @Test
     void creditsAvailableBalanceWhenFundingCommandIsAccepted() {
         var publisher = new RecordingPublisher();
-        var ledger = new InMemoryLedger();
+        var ledger = new RecordingLedger();
         var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
 
         handler.handle(new CommandMessage(
@@ -212,7 +217,7 @@ class EngineCommandHandlerTest {
             "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=1000|"
         ));
 
-        assertEquals(new AssetBalance(1_000, 0), ledger.account(new AccountId("account-A")).balanceOf(new Asset("BRL")));
+        assertEquals(new AssetBalance(1_000, 0), ledger.balanceOf(new AccountId("account-A"), new Asset("BRL")));
         assertEquals(1, publisher.messages().size());
         assertEquals(
             "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=account-A\u000111=funding-1\u000117=accepted-funding-1\u0001150=0\u000139=0\u000131=0\u000132=0\u0001151=0\u000158=Funding credited\u0001",
@@ -223,7 +228,7 @@ class EngineCommandHandlerTest {
     @Test
     void acceptsOrderAfterFundingCredit() {
         var publisher = new RecordingPublisher();
-        var ledger = new InMemoryLedger();
+        var ledger = new RecordingLedger();
         var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
 
         handler.handle(new CommandMessage(
@@ -237,7 +242,7 @@ class EngineCommandHandlerTest {
             "8=FIX.4.4|35=D|49=gateway|56=engine|1=buyer-A|11=buy-1|55=BTC/BRL|54=1|44=100|38=10|"
         ));
 
-        assertEquals(new AssetBalance(0, 1_000), ledger.account(new AccountId("buyer-A")).balanceOf(new Asset("BRL")));
+        assertEquals(new AssetBalance(0, 1_000), ledger.balanceOf(new AccountId("buyer-A"), new Asset("BRL")));
         assertEquals(2, publisher.messages().size());
         assertEquals(
             "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=buyer-A\u000111=buy-1\u000117=accepted-buy-1\u0001150=0\u000139=0\u000131=0\u000132=0\u0001151=0\u000158=Order accepted\u0001",
@@ -248,7 +253,7 @@ class EngineCommandHandlerTest {
     @Test
     void rejectsInvalidFundingCredit() {
         var publisher = new RecordingPublisher();
-        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+        var handler = fundedHandler(publisher);
 
         handler.handle(new CommandMessage(
             "commands",
@@ -266,7 +271,7 @@ class EngineCommandHandlerTest {
     @Test
     void releasesReservedBalanceWhenOpenOrderIsCancelled() {
         var publisher = new RecordingPublisher();
-        var ledger = new InMemoryLedger();
+        var ledger = new RecordingLedger();
         ledger.credit(new AccountId("buyer-A"), new Asset("BRL"), 1_000);
         var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
 
@@ -275,7 +280,7 @@ class EngineCommandHandlerTest {
             "buyer-A",
             "8=FIX.4.4|35=D|49=gateway|56=engine|1=buyer-A|11=buy-1|55=BTC/BRL|54=1|44=100|38=10|"
         ));
-        assertEquals(new AssetBalance(0, 1_000), ledger.account(new AccountId("buyer-A")).balanceOf(new Asset("BRL")));
+        assertEquals(new AssetBalance(0, 1_000), ledger.balanceOf(new AccountId("buyer-A"), new Asset("BRL")));
 
         handler.handle(new CommandMessage(
             "commands",
@@ -283,13 +288,13 @@ class EngineCommandHandlerTest {
             "8=FIX.4.4|35=F|49=gateway|56=engine|1=buyer-A|11=cancel-1|41=buy-1|"
         ));
 
-        assertEquals(new AssetBalance(1_000, 0), ledger.account(new AccountId("buyer-A")).balanceOf(new Asset("BRL")));
+        assertEquals(new AssetBalance(1_000, 0), ledger.balanceOf(new AccountId("buyer-A"), new Asset("BRL")));
     }
 
     @Test
     void reservesBaseAssetForSellOrder() {
         var publisher = new RecordingPublisher();
-        var ledger = new InMemoryLedger();
+        var ledger = new RecordingLedger();
         ledger.credit(new AccountId("seller-A"), new Asset("BTC"), 10);
         var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
 
@@ -299,13 +304,13 @@ class EngineCommandHandlerTest {
             "8=FIX.4.4|35=D|49=gateway|56=engine|1=seller-A|11=sell-1|55=BTC/BRL|54=2|44=100|38=10|"
         ));
 
-        assertEquals(new AssetBalance(0, 10), ledger.account(new AccountId("seller-A")).balanceOf(new Asset("BTC")));
+        assertEquals(new AssetBalance(0, 10), ledger.balanceOf(new AccountId("seller-A"), new Asset("BTC")));
     }
 
     @Test
     void releasesReservationWhenBookRejectsDuplicateOrder() {
         var publisher = new RecordingPublisher();
-        var ledger = new InMemoryLedger();
+        var ledger = new RecordingLedger();
         ledger.credit(new AccountId("buyer-A"), new Asset("BRL"), 2_000);
         var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
         var duplicate = new CommandMessage(
@@ -317,7 +322,7 @@ class EngineCommandHandlerTest {
         handler.handle(duplicate);
         handler.handle(duplicate);
 
-        assertEquals(new AssetBalance(1_000, 1_000), ledger.account(new AccountId("buyer-A")).balanceOf(new Asset("BRL")));
+        assertEquals(new AssetBalance(1_000, 1_000), ledger.balanceOf(new AccountId("buyer-A"), new Asset("BRL")));
         assertEquals(
             "8=FIX.4.4\u000135=j\u000149=engine\u000156=buyer-A\u000158=duplicate client order id: buy-1\u0001",
             publisher.messages().getLast().value()
@@ -329,7 +334,7 @@ class EngineCommandHandlerTest {
     }
 
     private static EngineCommandHandler fundedHandler(RecordingPublisher publisher, java.util.function.Consumer<String> output, Funding... funds) {
-        var ledger = new InMemoryLedger();
+        var ledger = new RecordingLedger();
         for (var funding : funds) {
             ledger.credit(new AccountId(funding.accountId()), new Asset(funding.asset()), funding.amount());
         }
@@ -341,6 +346,83 @@ class EngineCommandHandlerTest {
     }
 
     private record Funding(String accountId, String asset, long amount) {
+    }
+
+    private static final class RecordingLedger implements Ledger {
+
+        private final Map<AccountAsset, AssetBalance> balances = new HashMap<>();
+
+        @Override
+        public void credit(AccountId accountId, Asset asset, long amount) {
+            requirePositive(amount);
+            var balance = balanceOf(accountId, asset);
+            update(accountId, asset, new AssetBalance(checkedAdd(balance.available(), amount), balance.locked()));
+        }
+
+        @Override
+        public void debitAvailable(AccountId accountId, Asset asset, long amount) {
+            requirePositive(amount);
+            var balance = balanceOf(accountId, asset);
+            if (balance.available() < amount) {
+                throw new LedgerException("insufficient available balance");
+            }
+            update(accountId, asset, new AssetBalance(balance.available() - amount, balance.locked()));
+        }
+
+        @Override
+        public void reserve(AccountId accountId, Asset asset, long amount) {
+            requirePositive(amount);
+            var balance = balanceOf(accountId, asset);
+            if (balance.available() < amount) {
+                throw new LedgerException("insufficient available balance");
+            }
+            update(accountId, asset, new AssetBalance(balance.available() - amount, checkedAdd(balance.locked(), amount)));
+        }
+
+        @Override
+        public void release(AccountId accountId, Asset asset, long amount) {
+            requirePositive(amount);
+            var balance = balanceOf(accountId, asset);
+            if (balance.locked() < amount) {
+                throw new LedgerException("insufficient locked balance");
+            }
+            update(accountId, asset, new AssetBalance(checkedAdd(balance.available(), amount), balance.locked() - amount));
+        }
+
+        @Override
+        public void settle(TradeSettlementInstruction instruction) {
+            throw new UnsupportedOperationException("settlement is not exercised by engine handler tests yet");
+        }
+
+        @Override
+        public AssetBalance balanceOf(AccountId accountId, Asset asset) {
+            return balances.getOrDefault(new AccountAsset(accountId, asset), AssetBalance.zero());
+        }
+
+        private void update(AccountId accountId, Asset asset, AssetBalance balance) {
+            balances.put(new AccountAsset(accountId, asset), balance);
+        }
+
+        private static void requirePositive(long amount) {
+            if (amount <= 0) {
+                throw new LedgerException("amount must be positive");
+            }
+        }
+
+        private static long checkedAdd(long left, long right) {
+            try {
+                return Math.addExact(left, right);
+            } catch (ArithmeticException exception) {
+                throw new LedgerException("balance overflow");
+            }
+        }
+    }
+
+    private record AccountAsset(AccountId accountId, Asset asset) {
+        private AccountAsset {
+            Objects.requireNonNull(accountId, "accountId must not be null");
+            Objects.requireNonNull(asset, "asset must not be null");
+        }
     }
 
     private static final class RecordingPublisher implements CommandPublisher {

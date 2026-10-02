@@ -14,7 +14,7 @@ sdk use java 27.0.0-amzn
 rtk ./gradlew test
 ```
 
-O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, ledger em memória, funding e reserva pré-matching. Liquidação dos trades no ledger, snapshots e replay ainda serão adicionados em fases posteriores.
+O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, ledger persistido em PostgreSQL via Spring Data JPA, funding e reserva pré-matching. Liquidação dos trades no ledger, snapshots e replay ainda serão adicionados em fases posteriores.
 
 ## Módulos
 
@@ -23,7 +23,7 @@ O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/m
 | `shared` | Parsing FIX e pequenos value objects compartilhados. |
 | `command-log` | Portas e adapters Kafka para comandos/eventos. |
 | `engine` | Intake de ordens FIX, reserva de saldo, book em memória, matching e eventos de execução. |
-| `ledger` | Contas, saldos `available/locked`, reserva, liberação e liquidação em memória. |
+| `ledger` | Contas, saldos `available/locked`, reserva, liberação e liquidação persistidos em PostgreSQL via Spring Data JPA. |
 | `gateway` | Entrada HTTP que recebe FIX textual e publica no Kafka. |
 
 ## Verificação
@@ -42,6 +42,14 @@ rtk ./gradlew :engine:runEngine
 rtk ./gradlew :gateway:runGateway
 ```
 
+O `docker-compose` sobe Kafka e PostgreSQL. O ledger usa por padrão:
+
+```text
+MB_LEDGER_JDBC_URL=jdbc:postgresql://localhost:5432/mb
+MB_LEDGER_USERNAME=mb
+MB_LEDGER_PASSWORD=mb
+```
+
 Publicar funding e depois uma ordem pelo gateway:
 
 ```bash
@@ -58,4 +66,4 @@ Para facilitar testes locais, o gateway aceita `|` como delimitador e normaliza 
 
 O engine consome `commands`, converte FIX inbound em comandos tipados, credita funding `35=U1`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, aceita cancelamentos de ordens abertas, libera reserva no cancelamento e publica ExecutionReports FIX em `events`.
 
-O ledger já possui domínio em memória para saldos disponíveis/bloqueados e liquidação de trades. Funding e reserva pré-matching já estão conectados ao engine; liquidação dos fills ainda está pendente.
+O ledger persiste saldos disponíveis/bloqueados em PostgreSQL. Funding e reserva pré-matching já estão conectados ao engine; liquidação dos fills ainda está pendente.
