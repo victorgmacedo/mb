@@ -18,5 +18,5 @@ module br.com.mb.ledger {
     exports br.com.mb.ledger.jpa;
     exports br.com.mb.ledger.settlement;
 
-    opens br.com.mb.ledger.jpa to org.hibernate.orm.core, spring.beans, spring.context, spring.core, spring.data.commons, spring.data.jpa;
+    opens br.com.mb.ledger.jpa;
 }
