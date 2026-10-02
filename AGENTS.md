@@ -17,7 +17,7 @@ Módulos:
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
 - `engine`: consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka e publica eventos FIX.
-- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e liquidação persistido em PostgreSQL via Spring Data JPA.
+- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via Spring Data JPA.
 
 O pacote base padrão é `br.com.mb`.
 
@@ -65,7 +65,7 @@ flowchart LR
 - `release` devolve saldo bloqueado para disponível.
 - `settle` liquida trades consumindo saldos bloqueados conforme o lado do maker.
 - O ledger valida todos os saldos bloqueados necessários antes de mutar contas na liquidação.
-- O consumidor assíncrono do ledger para mensagens `settlements` ainda não foi implementado.
+- `LedgerSettlementApplication` consome `settlements` e aplica `U2/U3` idempotentemente usando `ExecID(17)`.
 
 ## Comandos Importantes
 
@@ -73,6 +73,7 @@ flowchart LR
 rtk ./gradlew clean test
 rtk docker compose config
 rtk docker compose up -d
+rtk ./gradlew :ledger:runLedgerSettlements
 rtk ./gradlew :engine:runEngine
 rtk ./gradlew :gateway:runGateway
 ```
@@ -91,7 +92,6 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Pendências Mapeadas
 
-- consumidor do ledger para aplicar `U2/U3` do tópico `settlements`
 - reconciliação de liquidações rejeitadas pelo consumidor
 - prevenção de self-trade
 - snapshots e replay
@@ -101,7 +101,6 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 A próxima fase grande deve endurecer consistência e replay:
 
-- consumidor idempotente do ledger para `settlements`
 - estratégia de reconciliação quando uma liquidação falhar após matching
 - snapshots/replay do book e comandos processados
 - eventos contábeis de liquidação

@@ -463,6 +463,8 @@ class EngineCommandHandlerTest {
 
         private final Map<AccountAsset, AssetBalance> balances = new HashMap<>();
         private final Map<String, RecordedFundingCredit> fundingCredits = new HashMap<>();
+        private final List<String> settlementExecutionIds = new ArrayList<>();
+        private final List<String> releaseExecutionIds = new ArrayList<>();
 
         @Override
         public void credit(AccountId accountId, Asset asset, long amount) {
@@ -542,6 +544,26 @@ class EngineCommandHandlerTest {
             update(instruction.takerAccountId(), instruction.baseAsset(), debitLocked(takerBase, instruction.quantity()));
             update(instruction.makerAccountId(), instruction.baseAsset(), credit(makerBase, instruction.quantity()));
             update(instruction.takerAccountId(), instruction.quoteAsset(), credit(takerQuote, quoteAmount));
+        }
+
+        @Override
+        public boolean settleExecution(String executionId, TradeSettlementInstruction instruction) {
+            if (settlementExecutionIds.contains(executionId)) {
+                return false;
+            }
+            settlementExecutionIds.add(executionId);
+            settle(instruction);
+            return true;
+        }
+
+        @Override
+        public boolean releaseExecution(String executionId, AccountId accountId, Asset asset, long amount) {
+            if (releaseExecutionIds.contains(executionId)) {
+                return false;
+            }
+            releaseExecutionIds.add(executionId);
+            release(accountId, asset, amount);
+            return true;
         }
 
         @Override

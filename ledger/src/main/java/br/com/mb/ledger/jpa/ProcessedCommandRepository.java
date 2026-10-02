@@ -13,8 +13,8 @@ public interface ProcessedCommandRepository extends JpaRepository<ProcessedComma
     @Modifying
     @Query(
         value = """
-            insert into processed_commands (command_type, client_order_id, account_id, asset_symbol, amount)
-            values (:commandType, :clientOrderId, :accountId, :assetSymbol, :amount)
+            insert into processed_commands (command_type, client_order_id, account_id, asset_symbol, amount, payload_hash)
+            values (:commandType, :clientOrderId, :accountId, :assetSymbol, :amount, :payloadHash)
             on conflict (command_type, client_order_id) do nothing
             """,
         nativeQuery = true
@@ -24,6 +24,7 @@ public interface ProcessedCommandRepository extends JpaRepository<ProcessedComma
         @Param("clientOrderId") String clientOrderId,
         @Param("accountId") String accountId,
         @Param("assetSymbol") String assetSymbol,
-        @Param("amount") long amount
+        @Param("amount") long amount,
+        @Param("payloadHash") String payloadHash
     );
 }

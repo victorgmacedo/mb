@@ -5,3 +5,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     runtimeOnly("org.postgresql:postgresql")
 }
+
+tasks.register<JavaExec>("runLedgerSettlements") {
+    group = "application"
+    description = "Runs the local ledger settlement consumer."
+    mainClass.set("br.com.mb.ledger.LedgerSettlementApplication")
+    classpath = sourceSets.main.get().runtimeClasspath
+}

@@ -16,5 +16,9 @@ public interface Ledger {
 
     void settle(TradeSettlementInstruction instruction);
 
+    boolean settleExecution(String executionId, TradeSettlementInstruction instruction);
+
+    boolean releaseExecution(String executionId, AccountId accountId, Asset asset, long amount);
+
     AssetBalance balanceOf(AccountId accountId, Asset asset);
 }

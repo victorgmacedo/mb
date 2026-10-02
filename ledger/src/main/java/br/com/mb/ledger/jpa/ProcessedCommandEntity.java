@@ -20,6 +20,8 @@ import java.util.Objects;
 public class ProcessedCommandEntity {
 
     static final String FUNDING_CREDIT = "FUNDING_CREDIT";
+    static final String TRADE_SETTLEMENT = "TRADE_SETTLEMENT";
+    static final String BALANCE_RELEASE = "BALANCE_RELEASE";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,10 +42,17 @@ public class ProcessedCommandEntity {
     @Column(name = "amount", nullable = false)
     private long amount;
 
+    @Column(name = "payload_hash", length = 64)
+    private String payloadHash;
+
     protected ProcessedCommandEntity() {
     }
 
     ProcessedCommandEntity(String commandType, String clientOrderId, String accountId, String assetSymbol, long amount) {
+        this(commandType, clientOrderId, accountId, assetSymbol, amount, null);
+    }
+
+    ProcessedCommandEntity(String commandType, String clientOrderId, String accountId, String assetSymbol, long amount, String payloadHash) {
         this.commandType = Objects.requireNonNull(commandType, "commandType must not be null");
         this.clientOrderId = Objects.requireNonNull(clientOrderId, "clientOrderId must not be null");
         this.accountId = Objects.requireNonNull(accountId, "accountId must not be null");
@@ -52,6 +61,7 @@ public class ProcessedCommandEntity {
             throw new LedgerException("amount must be positive");
         }
         this.amount = amount;
+        this.payloadHash = payloadHash;
     }
 
     boolean matchesFundingCredit(AccountId accountId, Asset asset, long amount) {
@@ -61,5 +71,9 @@ public class ProcessedCommandEntity {
             && this.accountId.equals(accountId.value())
             && assetSymbol.equals(asset.symbol())
             && this.amount == amount;
+    }
+
+    boolean matchesPayloadHash(String payloadHash) {
+        return Objects.equals(this.payloadHash, payloadHash);
     }
 }
