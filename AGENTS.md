@@ -1,27 +1,27 @@
-# Project Memory
+# Memória do Projeto
 
-This project is a Java 27 modular CLOB implementation under package `br.com.mb`.
+Este projeto é uma implementação modular Java 27 de um CLOB sob o pacote `br.com.mb`.
 
-Always run shell commands through `rtk` in this workspace, for example:
+Sempre execute comandos de shell via `rtk` neste workspace, por exemplo:
 
 ```bash
 rtk ./gradlew clean test
 rtk git status --short
 ```
 
-## Current Architecture
+## Arquitetura Atual
 
-Modules:
+Módulos:
 
-- `shared`: FIX parsing and small shared value objects.
-- `command-log`: Kafka command/event producer and consumer adapters.
-- `gateway`: HTTP ingress that accepts FIX text and publishes normalized FIX to Kafka `commands`.
-- `engine`: consumes FIX commands, validates order intake, keeps in-memory order books, performs basic matching, publishes FIX events.
-- `ledger`: placeholder for balances and accounting.
+- `shared`: parsing FIX e pequenos value objects compartilhados.
+- `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
+- `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
+- `engine`: consome comandos FIX, valida intake, mantém order books em memória, executa matching básico e publica eventos FIX.
+- `ledger`: placeholder para saldos e contabilidade.
 
-The default package is `br.com.mb`.
+O pacote base padrão é `br.com.mb`.
 
-## Runtime Flow
+## Fluxo em Execução
 
 ```mermaid
 flowchart LR
@@ -31,18 +31,18 @@ flowchart LR
     Engine --> Events[Kafka events]
 ```
 
-## Current Engine Behavior
+## Comportamento Atual do Engine
 
-- Supports inbound FIX `35=D` NewOrderSingle and `35=F` OrderCancelRequest.
-- Keeps one in-memory `OrderBook` per instrument.
-- Instruments currently known: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`.
-- Uses price-time priority.
-- Uses maker price for trades.
-- Publishes FIX `ExecutionReport(35=8)` for accepted/rested, fills, and cancels.
-- Publishes FIX `BusinessMessageReject(35=j)` for validation/business rejection.
-- Does not implement balances, ledger, self-trade prevention, snapshots, or replay yet.
+- Suporta FIX inbound `35=D` NewOrderSingle e `35=F` OrderCancelRequest.
+- Mantém um `OrderBook` em memória por instrumento.
+- Instrumentos conhecidos atualmente: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`.
+- Usa prioridade preço-tempo.
+- Usa preço do maker para trades.
+- Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
+- Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
+- Ainda não implementa saldos, ledger, prevenção de self-trade, snapshots ou replay.
 
-## Important Commands
+## Comandos Importantes
 
 ```bash
 rtk ./gradlew clean test
@@ -52,9 +52,9 @@ rtk ./gradlew :engine:runEngine
 rtk ./gradlew :gateway:runGateway
 ```
 
-## Commit Style So Far
+## Estilo de Commit Usado Até Aqui
 
-Keep commits small and thematic. Existing examples:
+Manter commits pequenos e temáticos. Exemplos existentes:
 
 - `feat: add shared FIX message parser`
 - `feat: add Kafka command log adapters`
@@ -62,13 +62,14 @@ Keep commits small and thematic. Existing examples:
 - `feat: consume FIX commands in engine`
 - `feat: validate engine order intake`
 - `feat: store accepted orders in memory book`
+- `feat: match limit orders in memory book`
 
-## Next Likely Work
+## Próximo Trabalho Provável
 
-The next major phase should introduce ledger/balance reservation:
+A próxima fase grande deve introduzir ledger/reserva de saldo:
 
-- account balances with `available` and `locked`
-- credit/debit commands
-- reserve quote for buys and base for sells before matching
-- settle trades after matching
-- test asset conservation
+- saldos de conta com `available` e `locked`
+- comandos de crédito/débito
+- reserva de quote para compras e base para vendas antes do matching
+- liquidação após trades
+- teste de conservação de ativos
