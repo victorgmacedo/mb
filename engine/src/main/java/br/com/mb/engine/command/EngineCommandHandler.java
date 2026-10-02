@@ -3,6 +3,7 @@ package br.com.mb.engine.command;
 import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.commandlog.CommandHandler;
 import br.com.mb.commandlog.CommandMessage;
+import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.OrderIntake;
@@ -19,6 +20,7 @@ public final class EngineCommandHandler implements CommandHandler {
     private final EngineCommandParser parser;
     private final EngineEventFactory eventFactory;
     private final OrderIntake orderIntake;
+    private final EngineState engineState;
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher must not be null");
@@ -27,6 +29,7 @@ public final class EngineCommandHandler implements CommandHandler {
         this.parser = new EngineCommandParser();
         this.eventFactory = new EngineEventFactory();
         this.orderIntake = new OrderIntake(InstrumentCatalog.defaultCatalog());
+        this.engineState = new EngineState();
     }
 
     @Override
@@ -42,7 +45,9 @@ public final class EngineCommandHandler implements CommandHandler {
             var fix = FixMessage.parse(message.value());
             var command = parser.parse(fix);
             if (command instanceof NewOrderSingleCommand) {
-                orderIntake.accept(command);
+                engineState.place(orderIntake.accept(command));
+            } else if (command instanceof CancelOrderCommand cancelOrder) {
+                engineState.cancel(cancelOrder);
             }
             return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted(command));
         } catch (InvalidFixMessageException | InvalidOrderException exception) {

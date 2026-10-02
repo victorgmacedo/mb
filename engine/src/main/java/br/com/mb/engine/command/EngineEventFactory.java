@@ -8,17 +8,17 @@ public final class EngineEventFactory {
                 newOrder.accountId(),
                 newOrder.clientOrderId(),
                 "accepted-" + newOrder.clientOrderId(),
-                "A",
-                "A",
-                "Command accepted"
+                "0",
+                "0",
+                "Order accepted"
             );
             case CancelOrderCommand cancelOrder -> executionReport(
                 cancelOrder.accountId(),
                 cancelOrder.clientOrderId(),
                 "accepted-" + cancelOrder.clientOrderId(),
-                "6",
-                "6",
-                "Cancel command accepted"
+                "4",
+                "4",
+                "Order cancelled"
             );
         };
     }

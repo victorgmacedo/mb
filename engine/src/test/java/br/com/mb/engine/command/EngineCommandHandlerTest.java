@@ -28,7 +28,7 @@ class EngineCommandHandlerTest {
         assertEquals("account-A", result.key());
         assertEquals("NewOrderSingleCommand", result.detail());
         assertEquals(
-            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=account-A\u000111=order-1\u000117=accepted-order-1\u0001150=A\u000139=A\u000158=Command accepted\u0001",
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=account-A\u000111=order-1\u000117=accepted-order-1\u0001150=0\u000139=0\u000158=Order accepted\u0001",
             result.eventFixMessage()
         );
     }
@@ -72,6 +72,11 @@ class EngineCommandHandlerTest {
         var lines = new ArrayList<String>();
         var publisher = new RecordingPublisher();
         var handler = new EngineCommandHandler(publisher, "events", lines::add);
+        handler.handle(new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-0|55=BTC/BRL|54=1|44=50000000|38=100000000|"
+        ));
         var message = new CommandMessage(
             "commands",
             "account-A",
@@ -80,13 +85,32 @@ class EngineCommandHandlerTest {
 
         handler.handle(message);
 
-        assertEquals(1, lines.size());
-        assertEquals("ACCEPTED key=account-A command=CancelOrderCommand", lines.getFirst());
-        assertEquals(1, publisher.messages().size());
-        assertEquals("events", publisher.messages().getFirst().topic());
-        assertEquals("account-A", publisher.messages().getFirst().key());
+        assertEquals(2, lines.size());
+        assertEquals("ACCEPTED key=account-A command=CancelOrderCommand", lines.get(1));
+        assertEquals(2, publisher.messages().size());
+        assertEquals("events", publisher.messages().get(1).topic());
+        assertEquals("account-A", publisher.messages().get(1).key());
         assertEquals(
-            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=gateway\u000111=order-1\u000117=accepted-order-1\u0001150=6\u000139=6\u000158=Cancel command accepted\u0001",
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=gateway\u000111=order-1\u000117=accepted-order-1\u0001150=4\u000139=4\u000158=Order cancelled\u0001",
+            publisher.messages().get(1).value()
+        );
+    }
+
+    @Test
+    void rejectsCancelForUnknownOpenOrder() {
+        var publisher = new RecordingPublisher();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+        var message = new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=F|49=gateway|56=engine|11=cancel-1|41=missing|"
+        );
+
+        handler.handle(message);
+
+        assertEquals(1, publisher.messages().size());
+        assertEquals(
+            "8=FIX.4.4\u000135=j\u000149=engine\u000156=account-A\u000158=open order not found: missing\u0001",
             publisher.messages().getFirst().value()
         );
     }
