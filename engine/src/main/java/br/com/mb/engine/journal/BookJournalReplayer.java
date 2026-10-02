@@ -9,6 +9,8 @@ import br.com.mb.engine.domain.OrderIntake;
 import br.com.mb.engine.command.NewOrderSingleCommand;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.Objects;
 
 public final class BookJournalReplayer {
@@ -38,7 +40,10 @@ public final class BookJournalReplayer {
                 OrderSide.fromFixValue(required(fix, 54, "Side")),
                 parseLong(required(fix, 44, "Price"), "Price(44)"),
                 parseLong(required(fix, 38, "OrderQty"), "OrderQty(38)")
-            )), parseLong(required(fix, 10003, "EntrySequence"), "EntrySequence(10003)"));
+            )),
+                parseLong(required(fix, 10003, "EntrySequence"), "EntrySequence(10003)"),
+                parseInstant(required(fix, 10004, "EnteredAt"))
+            );
             case BOOK_ORDER_CANCELLED -> state.cancel(new CancelOrderCommand(
                 fix.field(1).orElseGet(fix::kafkaKey),
                 required(fix, 41, "OrigClOrdID"),
@@ -64,6 +69,14 @@ public final class BookJournalReplayer {
             return parsed;
         } catch (NumberFormatException exception) {
             throw new InvalidFixMessageException("Invalid " + name + ": " + value, exception);
+        }
+    }
+
+    private static Instant parseInstant(String value) {
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeParseException exception) {
+            throw new InvalidFixMessageException("Invalid EnteredAt(10004): " + value, exception);
         }
     }
 }

@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.Instant;
 
 public final class OrderBook {
 
@@ -28,10 +29,10 @@ public final class OrderBook {
     }
 
     public PlacementResult place(Order order) {
-        return place(order, 0);
+        return place(order, 0, Instant.EPOCH);
     }
 
-    public PlacementResult place(Order order, long entrySequence) {
+    public PlacementResult place(Order order, long entrySequence, Instant enteredAt) {
         if (!instrument.equals(order.instrument())) {
             throw new InvalidOrderException("order instrument does not match book instrument");
         }
@@ -39,7 +40,7 @@ public final class OrderBook {
             throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
         }
 
-        var taker = BookOrder.from(order, entrySequence);
+        var taker = BookOrder.from(order, entrySequence, enteredAt);
         var trades = match(taker);
         if (!taker.isFilled()) {
             sideFor(order.side()).add(taker);

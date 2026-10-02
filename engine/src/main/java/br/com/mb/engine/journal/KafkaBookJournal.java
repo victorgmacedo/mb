@@ -5,6 +5,7 @@ import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.engine.book.BookOrder;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
+import java.time.Instant;
 import java.util.Objects;
 
 public final class KafkaBookJournal implements BookJournal {
@@ -18,9 +19,9 @@ public final class KafkaBookJournal implements BookJournal {
     }
 
     @Override
-    public void appendAccepted(Order order, long entrySequence) {
+    public void appendAccepted(Order order, long entrySequence, Instant enteredAt) {
         Objects.requireNonNull(order, "order must not be null");
-        publisher.publish(new CommandMessage(topic, order.instrument().symbol(), acceptedFix(order, entrySequence)));
+        publisher.publish(new CommandMessage(topic, order.instrument().symbol(), acceptedFix(order, entrySequence, enteredAt)));
     }
 
     @Override
@@ -29,11 +30,12 @@ public final class KafkaBookJournal implements BookJournal {
         publisher.publish(new CommandMessage(topic, order.instrument().symbol(), cancelledFix(order)));
     }
 
-    private static String acceptedFix(Order order, long entrySequence) {
+    private static String acceptedFix(Order order, long entrySequence, Instant enteredAt) {
+        Objects.requireNonNull(enteredAt, "enteredAt must not be null");
         if (entrySequence <= 0) {
             throw new IllegalArgumentException("entrySequence must be positive");
         }
-        return "8=FIX.4.4\u000135=U4\u000149=engine\u000156=engine\u00011=%s\u000111=%s\u000155=%s\u000154=%s\u000144=%d\u000138=%d\u000110003=%d\u0001"
+        return "8=FIX.4.4\u000135=U4\u000149=engine\u000156=engine\u00011=%s\u000111=%s\u000155=%s\u000154=%s\u000144=%d\u000138=%d\u000110003=%d\u000110004=%s\u0001"
             .formatted(
                 sanitize(order.accountId().value()),
                 sanitize(order.clientOrderId().value()),
@@ -41,7 +43,8 @@ public final class KafkaBookJournal implements BookJournal {
                 sideTag(order.side()),
                 order.price(),
                 order.quantity(),
-                entrySequence
+                entrySequence,
+                sanitize(enteredAt.toString())
             );
     }
 

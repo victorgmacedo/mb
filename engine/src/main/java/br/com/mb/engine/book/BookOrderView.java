@@ -1,6 +1,7 @@
 package br.com.mb.engine.book;
 
 import br.com.mb.engine.domain.Side;
+import java.time.Instant;
 
 public record BookOrderView(
     String accountId,
@@ -9,6 +10,7 @@ public record BookOrderView(
     Side side,
     long price,
     long entrySequence,
+    Instant enteredAt,
     long remainingQuantity
 ) {
 
@@ -20,6 +22,7 @@ public record BookOrderView(
             order.side(),
             order.price(),
             order.entrySequence(),
+            order.enteredAt(),
             order.remainingQuantity()
         );
     }

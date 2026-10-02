@@ -22,6 +22,7 @@ import br.com.mb.shared.model.Asset;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
 import java.util.Objects;
+import java.time.Instant;
 import java.util.function.Consumer;
 
 public final class EngineCommandHandler implements CommandHandler {
@@ -108,10 +109,11 @@ public final class EngineCommandHandler implements CommandHandler {
                 }
                 balanceReservations.reserve(order);
                 var entrySequence = engineState.nextEntrySequence();
-                bookJournal.appendAccepted(order, entrySequence);
+                var enteredAt = Instant.now();
+                bookJournal.appendAccepted(order, entrySequence, enteredAt);
                 PlacementResult placement;
                 try {
-                    placement = engineState.place(order, entrySequence);
+                    placement = engineState.place(order, entrySequence, enteredAt);
                 } catch (InvalidOrderException exception) {
                     releaseUnsettled(order);
                     throw exception;

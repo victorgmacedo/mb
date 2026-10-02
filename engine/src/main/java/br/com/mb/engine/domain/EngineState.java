@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.time.Instant;
 
 public final class EngineState {
 
@@ -18,12 +19,12 @@ public final class EngineState {
     private long nextEntrySequence = 1;
 
     public PlacementResult place(Order order) {
-        return place(order, nextEntrySequence());
+        return place(order, nextEntrySequence(), Instant.now());
     }
 
-    public PlacementResult place(Order order, long entrySequence) {
+    public PlacementResult place(Order order, long entrySequence, Instant enteredAt) {
         var book = books.computeIfAbsent(order.instrument(), OrderBook::new);
-        var result = book.place(order, entrySequence);
+        var result = book.place(order, entrySequence, enteredAt);
         advanceEntrySequencePast(entrySequence);
         result.trades().stream()
             .filter(trade -> trade.makerLeavesQuantity() == 0)

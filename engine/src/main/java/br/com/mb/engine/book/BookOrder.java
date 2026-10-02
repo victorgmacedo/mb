@@ -5,6 +5,8 @@ import br.com.mb.engine.domain.ClientOrderId;
 import br.com.mb.engine.domain.Instrument;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
+import java.time.Instant;
+import java.util.Objects;
 
 public final class BookOrder {
 
@@ -14,26 +16,28 @@ public final class BookOrder {
     private final Side side;
     private final long price;
     private final long entrySequence;
+    private final Instant enteredAt;
     private long remainingQuantity;
     BookOrder previous;
     BookOrder next;
 
-    private BookOrder(Order order, long entrySequence) {
+    private BookOrder(Order order, long entrySequence, Instant enteredAt) {
         this.accountId = order.accountId();
         this.clientOrderId = order.clientOrderId();
         this.instrument = order.instrument();
         this.side = order.side();
         this.price = order.price();
         this.entrySequence = entrySequence;
+        this.enteredAt = Objects.requireNonNull(enteredAt, "enteredAt must not be null");
         this.remainingQuantity = order.quantity();
     }
 
     public static BookOrder from(Order order) {
-        return new BookOrder(order, 0);
+        return new BookOrder(order, 0, Instant.EPOCH);
     }
 
-    public static BookOrder from(Order order, long entrySequence) {
-        return new BookOrder(order, entrySequence);
+    public static BookOrder from(Order order, long entrySequence, Instant enteredAt) {
+        return new BookOrder(order, entrySequence, enteredAt);
     }
 
     public AccountId accountId() {
@@ -58,6 +62,10 @@ public final class BookOrder {
 
     public long entrySequence() {
         return entrySequence;
+    }
+
+    public Instant enteredAt() {
+        return enteredAt;
     }
 
     public long remainingQuantity() {
