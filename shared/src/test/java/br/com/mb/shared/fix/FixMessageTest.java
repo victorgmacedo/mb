@@ -25,6 +25,14 @@ class FixMessageTest {
     }
 
     @Test
+    void parsesFundingCreditMessageType() {
+        var message = FixMessage.parse("8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=1000|");
+
+        assertEquals("account-A", message.kafkaKey());
+        assertEquals(FixMessageType.FUNDING_CREDIT, message.messageType());
+    }
+
+    @Test
     void rejectsUnsupportedMessageType() {
         var exception = assertThrows(
             InvalidFixMessageException.class,

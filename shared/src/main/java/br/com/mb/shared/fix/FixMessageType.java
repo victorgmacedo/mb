@@ -3,6 +3,7 @@ package br.com.mb.shared.fix;
 public enum FixMessageType {
     NEW_ORDER_SINGLE("D"),
     ORDER_CANCEL_REQUEST("F"),
+    FUNDING_CREDIT("U1"),
     EXECUTION_REPORT("8"),
     BUSINESS_MESSAGE_REJECT("j");
 

@@ -16,7 +16,7 @@ Módulos:
 - `shared`: parsing FIX e pequenos value objects compartilhados.
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
-- `engine`: consome comandos FIX, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico e publica eventos FIX.
+- `engine`: consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico e publica eventos FIX.
 - `ledger`: domínio inicial de saldos em memória com `available`, `locked`, reserva, liberação e liquidação.
 
 O pacote base padrão é `br.com.mb`.
@@ -33,17 +33,18 @@ flowchart LR
 
 ## Comportamento Atual do Engine
 
-- Suporta FIX inbound `35=D` NewOrderSingle e `35=F` OrderCancelRequest.
+- Suporta FIX inbound `35=D` NewOrderSingle, `35=F` OrderCancelRequest e `35=U1` FundingCredit interno.
 - Mantém um `OrderBook` em memória por instrumento.
 - Instrumentos conhecidos atualmente: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`.
 - O catálogo do engine mapeia instrumento para base/cotação.
 - Antes do matching, compra reserva `price * quantity` no ativo de cotação e venda reserva `quantity` no ativo base.
 - Cancelamento aceito libera a reserva restante da ordem aberta.
+- Funding `35=U1` credita saldo disponível usando `Account(1)`, `ClOrdID(11)`, `Asset(55)` e `Amount(38)`.
 - Usa prioridade preço-tempo.
 - Usa preço do maker para trades.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não liquida trades no ledger. Também não implementa comandos de funding, prevenção de self-trade, snapshots ou replay.
+- Ainda não liquida trades no ledger. Também não implementa idempotência de funding, prevenção de self-trade, snapshots ou replay.
 
 ## Comportamento Atual do Ledger
 
@@ -79,7 +80,7 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Pendências Mapeadas
 
-- comando/evento de funding para creditar/debitar contas em runtime
+- idempotência de funding por `ClOrdID(11)`
 - liquidação dos trades no ledger após matching
 - liberação de sobras do taker após fills
 - liberação de diferença de quote por price improvement em compras
@@ -91,4 +92,4 @@ A próxima fase grande deve concluir a integração de liquidação entre engine
 
 - liquidação após trades
 - liberação de sobras e diferenças por price improvement
-- comando/evento de funding para permitir uso real do runtime local
+- idempotência de funding por `ClOrdID(11)`

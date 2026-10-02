@@ -40,6 +40,19 @@ class EngineCommandParserTest {
     }
 
     @Test
+    void mapsFundingCreditFields() {
+        var command = parser.parse(FixMessage.parse(
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=1000|"
+        ));
+
+        var funding = assertInstanceOf(FundingCreditCommand.class, command);
+        assertEquals("account-A", funding.accountId());
+        assertEquals("funding-1", funding.clientOrderId());
+        assertEquals("BRL", funding.asset());
+        assertEquals(1000, funding.amount());
+    }
+
+    @Test
     void rejectsNewOrderWithoutRequiredPrice() {
         var message = FixMessage.parse(
             "8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|55=BTC/BRL|54=1|38=100000000|"
@@ -70,5 +83,27 @@ class EngineCommandParserTest {
         var exception = assertThrows(InvalidFixMessageException.class, () -> parser.parse(message));
 
         assertEquals("OrderQty(38) must be positive", exception.getMessage());
+    }
+
+    @Test
+    void rejectsFundingCreditWithoutRequiredAsset() {
+        var message = FixMessage.parse(
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|38=1000|"
+        );
+
+        var exception = assertThrows(InvalidFixMessageException.class, () -> parser.parse(message));
+
+        assertEquals("FIX message requires Asset(55)", exception.getMessage());
+    }
+
+    @Test
+    void rejectsNonPositiveFundingAmount() {
+        var message = FixMessage.parse(
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=0|"
+        );
+
+        var exception = assertThrows(InvalidFixMessageException.class, () -> parser.parse(message));
+
+        assertEquals("Amount(38) must be positive", exception.getMessage());
     }
 }

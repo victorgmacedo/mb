@@ -1,4 +1,4 @@
 package br.com.mb.engine.command;
 
-public sealed interface EngineCommand permits NewOrderSingleCommand, CancelOrderCommand {
+public sealed interface EngineCommand permits NewOrderSingleCommand, CancelOrderCommand, FundingCreditCommand {
 }

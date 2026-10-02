@@ -8,7 +8,10 @@ import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.OrderIntake;
 import br.com.mb.engine.ledger.BalanceReservations;
+import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.InMemoryLedger;
+import br.com.mb.ledger.domain.LedgerException;
+import br.com.mb.shared.model.Asset;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
 import java.util.Objects;
@@ -24,6 +27,7 @@ public final class EngineCommandHandler implements CommandHandler {
     private final OrderIntake orderIntake;
     private final EngineState engineState;
     private final BalanceReservations balanceReservations;
+    private final InMemoryLedger ledger;
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
         this(eventPublisher, eventsTopic, output, new InMemoryLedger());
@@ -45,6 +49,7 @@ public final class EngineCommandHandler implements CommandHandler {
         this.orderIntake = new OrderIntake(instrumentCatalog);
         this.engineState = new EngineState();
         this.balanceReservations = new BalanceReservations(instrumentCatalog, ledger);
+        this.ledger = ledger;
     }
 
     @Override
@@ -73,10 +78,16 @@ public final class EngineCommandHandler implements CommandHandler {
                 }
             } else if (command instanceof CancelOrderCommand cancelOrder) {
                 balanceReservations.release(engineState.cancel(cancelOrder));
+            } else if (command instanceof FundingCreditCommand fundingCredit) {
+                credit(fundingCredit);
             }
             return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted(command));
-        } catch (InvalidFixMessageException | InvalidOrderException exception) {
+        } catch (InvalidFixMessageException | InvalidOrderException | LedgerException exception) {
             return EngineCommandResult.rejected(message.key(), exception.getMessage(), eventFactory.rejected(message.key(), exception.getMessage()));
         }
+    }
+
+    private void credit(FundingCreditCommand command) {
+        ledger.credit(new AccountId(command.accountId()), new Asset(command.asset()), command.amount());
     }
 }

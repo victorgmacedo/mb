@@ -31,6 +31,17 @@ public final class EngineEventFactory {
                 0,
                 "Order cancelled"
             ));
+            case FundingCreditCommand fundingCredit -> List.of(executionReport(
+                fundingCredit.accountId(),
+                fundingCredit.clientOrderId(),
+                "accepted-" + fundingCredit.clientOrderId(),
+                "0",
+                "0",
+                0,
+                0,
+                0,
+                "Funding credited"
+            ));
         };
     }
 

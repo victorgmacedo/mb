@@ -201,6 +201,69 @@ class EngineCommandHandlerTest {
     }
 
     @Test
+    void creditsAvailableBalanceWhenFundingCommandIsAccepted() {
+        var publisher = new RecordingPublisher();
+        var ledger = new InMemoryLedger();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
+
+        handler.handle(new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=1000|"
+        ));
+
+        assertEquals(new AssetBalance(1_000, 0), ledger.account(new AccountId("account-A")).balanceOf(new Asset("BRL")));
+        assertEquals(1, publisher.messages().size());
+        assertEquals(
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=account-A\u000111=funding-1\u000117=accepted-funding-1\u0001150=0\u000139=0\u000131=0\u000132=0\u0001151=0\u000158=Funding credited\u0001",
+            publisher.messages().getFirst().value()
+        );
+    }
+
+    @Test
+    void acceptsOrderAfterFundingCredit() {
+        var publisher = new RecordingPublisher();
+        var ledger = new InMemoryLedger();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
+
+        handler.handle(new CommandMessage(
+            "commands",
+            "buyer-A",
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=buyer-A|11=funding-1|55=BRL|38=1000|"
+        ));
+        handler.handle(new CommandMessage(
+            "commands",
+            "buyer-A",
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=buyer-A|11=buy-1|55=BTC/BRL|54=1|44=100|38=10|"
+        ));
+
+        assertEquals(new AssetBalance(0, 1_000), ledger.account(new AccountId("buyer-A")).balanceOf(new Asset("BRL")));
+        assertEquals(2, publisher.messages().size());
+        assertEquals(
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=buyer-A\u000111=buy-1\u000117=accepted-buy-1\u0001150=0\u000139=0\u000131=0\u000132=0\u0001151=0\u000158=Order accepted\u0001",
+            publisher.messages().getLast().value()
+        );
+    }
+
+    @Test
+    void rejectsInvalidFundingCredit() {
+        var publisher = new RecordingPublisher();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+
+        handler.handle(new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=0|"
+        ));
+
+        assertEquals(1, publisher.messages().size());
+        assertEquals(
+            "8=FIX.4.4\u000135=j\u000149=engine\u000156=account-A\u000158=Amount(38) must be positive\u0001",
+            publisher.messages().getFirst().value()
+        );
+    }
+
+    @Test
     void releasesReservedBalanceWhenOpenOrderIsCancelled() {
         var publisher = new RecordingPublisher();
         var ledger = new InMemoryLedger();

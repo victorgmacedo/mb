@@ -10,6 +10,7 @@ public final class EngineCommandParser {
         return switch (message.messageType()) {
             case NEW_ORDER_SINGLE -> parseNewOrderSingle(message);
             case ORDER_CANCEL_REQUEST -> parseCancelOrder(message);
+            case FUNDING_CREDIT -> parseFundingCredit(message);
             case EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
                 throw new InvalidFixMessageException("Unsupported inbound FIX MsgType(35): " + message.messageType().tagValue());
         };
@@ -31,6 +32,15 @@ public final class EngineCommandParser {
             message.field(1).orElseGet(message::kafkaKey),
             required(message, 11, "ClOrdID"),
             required(message, 41, "OrigClOrdID")
+        );
+    }
+
+    private static FundingCreditCommand parseFundingCredit(FixMessage message) {
+        return new FundingCreditCommand(
+            required(message, 1, "Account"),
+            required(message, 11, "ClOrdID"),
+            required(message, 55, "Asset"),
+            parseLong(required(message, 38, "Amount"), "Amount(38)")
         );
     }
 
