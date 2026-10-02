@@ -49,4 +49,26 @@ class EngineCommandParserTest {
 
         assertEquals("FIX message requires Price(44)", exception.getMessage());
     }
+
+    @Test
+    void rejectsNonPositivePrice() {
+        var message = FixMessage.parse(
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|55=BTC/BRL|54=1|44=0|38=100000000|"
+        );
+
+        var exception = assertThrows(InvalidFixMessageException.class, () -> parser.parse(message));
+
+        assertEquals("Price(44) must be positive", exception.getMessage());
+    }
+
+    @Test
+    void rejectsNonPositiveQuantity() {
+        var message = FixMessage.parse(
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|55=BTC/BRL|54=1|44=50000000|38=0|"
+        );
+
+        var exception = assertThrows(InvalidFixMessageException.class, () -> parser.parse(message));
+
+        assertEquals("OrderQty(38) must be positive", exception.getMessage());
+    }
 }

@@ -49,6 +49,25 @@ class EngineCommandHandlerTest {
     }
 
     @Test
+    void rejectsUnknownInstrumentBeforePublishingAcceptance() {
+        var publisher = new RecordingPublisher();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {});
+        var message = new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|55=DOGE/BRL|54=1|44=50000000|38=100000000|"
+        );
+
+        handler.handle(message);
+
+        assertEquals(1, publisher.messages().size());
+        assertEquals(
+            "8=FIX.4.4\u000135=j\u000149=engine\u000156=account-A\u000158=unknown instrument: DOGE/BRL\u0001",
+            publisher.messages().getFirst().value()
+        );
+    }
+
+    @Test
     void publishesEventAndWritesResultLineWhenHandlingCommand() {
         var lines = new ArrayList<String>();
         var publisher = new RecordingPublisher();

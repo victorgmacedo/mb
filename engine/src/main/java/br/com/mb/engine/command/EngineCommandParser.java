@@ -42,7 +42,11 @@ public final class EngineCommandParser {
 
     private static long parseLong(String value, String name) {
         try {
-            return Long.parseLong(value);
+            var parsed = Long.parseLong(value);
+            if (parsed <= 0) {
+                throw new InvalidFixMessageException(name + " must be positive");
+            }
+            return parsed;
         } catch (NumberFormatException exception) {
             throw new InvalidFixMessageException("Invalid " + name + ": " + value, exception);
         }

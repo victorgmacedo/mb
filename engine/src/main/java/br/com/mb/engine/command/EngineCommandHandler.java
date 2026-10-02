@@ -3,6 +3,9 @@ package br.com.mb.engine.command;
 import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.commandlog.CommandHandler;
 import br.com.mb.commandlog.CommandMessage;
+import br.com.mb.engine.domain.InstrumentCatalog;
+import br.com.mb.engine.domain.InvalidOrderException;
+import br.com.mb.engine.domain.OrderIntake;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
 import java.util.Objects;
@@ -15,6 +18,7 @@ public final class EngineCommandHandler implements CommandHandler {
     private final Consumer<String> output;
     private final EngineCommandParser parser;
     private final EngineEventFactory eventFactory;
+    private final OrderIntake orderIntake;
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher must not be null");
@@ -22,6 +26,7 @@ public final class EngineCommandHandler implements CommandHandler {
         this.output = Objects.requireNonNull(output, "output must not be null");
         this.parser = new EngineCommandParser();
         this.eventFactory = new EngineEventFactory();
+        this.orderIntake = new OrderIntake(InstrumentCatalog.defaultCatalog());
     }
 
     @Override
@@ -36,8 +41,11 @@ public final class EngineCommandHandler implements CommandHandler {
         try {
             var fix = FixMessage.parse(message.value());
             var command = parser.parse(fix);
+            if (command instanceof NewOrderSingleCommand) {
+                orderIntake.accept(command);
+            }
             return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted(command));
-        } catch (InvalidFixMessageException exception) {
+        } catch (InvalidFixMessageException | InvalidOrderException exception) {
             return EngineCommandResult.rejected(message.key(), exception.getMessage(), eventFactory.rejected(message.key(), exception.getMessage()));
         }
     }
