@@ -24,6 +24,12 @@ public final class BookJournalReplayer {
     public EngineState replay(Iterable<CommandMessage> messages) {
         Objects.requireNonNull(messages, "messages must not be null");
         var state = new EngineState();
+        return replay(state, messages);
+    }
+
+    public EngineState replay(EngineState state, Iterable<CommandMessage> messages) {
+        Objects.requireNonNull(state, "state must not be null");
+        Objects.requireNonNull(messages, "messages must not be null");
         for (var message : messages) {
             replay(state, message);
         }

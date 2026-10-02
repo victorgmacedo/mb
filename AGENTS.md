@@ -55,7 +55,9 @@ flowchart LR
 - Compra taker executada abaixo do preço limite publica liberação de price improvement como FIX-like `35=U3`.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não implementa prevenção de self-trade nem persistência/restore de snapshots do book.
+- Persiste checkpoints Protobuf em PostgreSQL (`bytea`), com offsets por partição, schema, checksum e timestamp; restaura o último válido antes do replay incremental.
+- `runBookSnapshots` gera checkpoints periódicos em processo separado a partir do journal, fora do matching; suporta `--args=--once`.
+- Ainda não implementa prevenção de self-trade.
 
 ## Comportamento Atual do Ledger
 
@@ -80,6 +82,7 @@ rtk docker compose config
 rtk docker compose up -d
 rtk ./gradlew :ledger:runLedgerSettlements
 rtk ./gradlew :engine:runEngine
+rtk ./gradlew :engine:runBookSnapshots
 rtk ./gradlew :gateway:runGateway
 ```
 
@@ -98,10 +101,8 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 ## Pendências Mapeadas
 
 - snapshots reais do book:
-  - persistir snapshot Protobuf em PostgreSQL usando payload binário, por exemplo `bytea`
-  - guardar metadados de instrumento, partição, offset final do `book-journal`, versão do schema e timestamps operacionais
-  - no startup, carregar o último snapshot válido e replayar apenas o trecho posterior do `book-journal`
   - definir compactação/retenção segura do `book-journal`
+  - definir limpeza de checkpoints antigos e persistir identidade/epoch do tópico para detectar recriação
 - consistência engine/ledger:
   - reconciliar liquidações rejeitadas pelo consumidor
   - criar persistência de eventos/instruções de liquidação com status
@@ -148,4 +149,4 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Próximo Trabalho Provável
 
-A próxima implementação recomendada é persistir snapshots Protobuf do book no PostgreSQL e alterar o startup do engine para restaurar o último snapshot válido antes de replayar o `book-journal`. Isso fecha o fluxo de recover performático já iniciado com o codec Protobuf, sem misturar banco de dados no caminho quente do matching.
+A próxima implementação recomendada é melhorar a consistência engine/ledger: persistir o status das instruções de liquidação e definir retry/reconciliação de settlements rejeitados. Snapshots e recovery incremental já estão implementados; configuração e limites estão em `docs/BOOK-SNAPSHOTS.md`.

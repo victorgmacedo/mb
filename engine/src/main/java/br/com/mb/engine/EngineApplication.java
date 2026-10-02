@@ -5,8 +5,8 @@ import br.com.mb.commandlog.kafka.KafkaCommandPublisher;
 import br.com.mb.commandlog.kafka.KafkaTopicReplayer;
 import br.com.mb.engine.command.EngineCommandHandler;
 import br.com.mb.engine.config.EngineConfig;
-import br.com.mb.engine.domain.InstrumentCatalog;
-import br.com.mb.engine.journal.BookJournalReplayer;
+import br.com.mb.engine.snapshot.BookRecovery;
+import br.com.mb.engine.snapshot.PostgresBookSnapshotStore;
 import br.com.mb.engine.journal.KafkaBookJournal;
 import br.com.mb.engine.journal.KafkaSettlementJournal;
 import br.com.mb.ledger.jpa.PostgresLedgerFactory;
@@ -70,13 +70,17 @@ public final class EngineApplication {
     }
 
     private static br.com.mb.engine.domain.EngineState recoverBook(EngineConfig config) {
+        var store = PostgresBookSnapshotStore.fromEnvironment(System.getenv());
+        store.initialize();
         try (var replayer = KafkaTopicReplayer.connect(config.bootstrapServers(), "mb-engine-book-recovery")) {
-            var messages = replayer.replay(config.bookJournalTopic());
-            var state = new BookJournalReplayer(InstrumentCatalog.defaultCatalog()).replay(messages);
+            var recovery = new BookRecovery(store).recover(config.bookJournalTopic(),
+                offsets -> replayer.replay(config.bookJournalTopic(), offsets));
+            var state = recovery.state();
             LOG.info(
                 "engine.book.recovered",
                 "book_journal_topic", config.bookJournalTopic(),
-                "messages", messages.size(),
+                "messages", recovery.replayedMessages(),
+                "snapshot_restored", recovery.snapshotRestored(),
                 "open_orders", state.openOrders().size()
             );
             return state;

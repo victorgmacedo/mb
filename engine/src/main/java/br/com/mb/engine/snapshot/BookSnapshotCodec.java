@@ -30,7 +30,7 @@ public final class BookSnapshotCodec {
         }
     }
 
-    private BookSnapshot snapshotFrom(OrderBook book, long lastEntrySequence) {
+    public BookSnapshot snapshotFrom(OrderBook book, long lastEntrySequence) {
         return new BookSnapshot(
             book.instrument().symbol(),
             snapshotLevels(book.bidLevels()),

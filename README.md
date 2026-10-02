@@ -14,7 +14,7 @@ sdk use java 27.0.0-amzn
 rtk ./gradlew test
 ```
 
-O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, funding com idempotência persistida, reserva pré-matching no ledger PostgreSQL, journal Kafka de liquidação, consumer assíncrono de liquidação no ledger, recover do book por replay do `book-journal` e codec Protobuf para snapshots binários do book.
+O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, funding com idempotência persistida, reserva pré-matching no ledger PostgreSQL, journal Kafka de liquidação, consumer assíncrono de liquidação no ledger e recovery por snapshots Protobuf no PostgreSQL seguido de replay incremental do `book-journal`.
 
 ## Módulos
 
@@ -37,6 +37,8 @@ A verificação local requer Java 27. O wrapper versionado usa Gradle 9.8.0.
 Para um passo a passo completo de execução local, testes manuais, inspeção de Kafka/PostgreSQL e troubleshooting, veja [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 Para logging estruturado e preparação para exportação OpenTelemetry/OTLP, veja [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+
+Para snapshots periódicos, configuração e recovery, veja [docs/BOOK-SNAPSHOTS.md](docs/BOOK-SNAPSHOTS.md).
 
 ## Local Kafka
 
@@ -69,6 +71,6 @@ curl -i -X POST 'http://localhost:8080/commands' \
 
 Para facilitar testes locais, o gateway aceita `|` como delimitador e normaliza para SOH antes de publicar no Kafka.
 
-O engine consome `commands`, reconstrói o book no startup via replay do tópico `book-journal`, converte FIX inbound em comandos tipados, credita funding `35=U1` de forma idempotente pelo `ClOrdID(11)`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, persiste mutações aceitas do book no `book-journal`, publica instruções de liquidação FIX-like no tópico `settlements`, aceita cancelamentos de ordens abertas, libera reserva no cancelamento, publica ExecutionReports FIX em `events` e já possui codec Protobuf para persistir snapshots compactos em uma etapa posterior.
+O engine consome `commands`, restaura snapshots e replaya o trecho posterior do `book-journal` no startup, converte FIX inbound em comandos tipados, credita funding `35=U1` de forma idempotente pelo `ClOrdID(11)`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, persiste mutações aceitas do book no `book-journal`, publica instruções de liquidação FIX-like no tópico `settlements`, aceita cancelamentos de ordens abertas, libera reserva no cancelamento e publica ExecutionReports FIX em `events`.
 
 O ledger persiste saldos disponíveis/bloqueados em PostgreSQL. Funding, reserva pré-matching e cancelamento já estão conectados ao engine; o consumidor `runLedgerSettlements` aplica `U2/U3` do tópico `settlements` idempotentemente.

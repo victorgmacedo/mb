@@ -73,6 +73,21 @@ public final class EngineState {
         return nextEntrySequence++;
     }
 
+    public long lastEntrySequence() {
+        return nextEntrySequence - 1;
+    }
+
+    public List<OrderBook> books() {
+        return books.values().stream().sorted(Comparator.comparing(book -> book.instrument().symbol())).toList();
+    }
+
+    public void restoreEntrySequence(long lastEntrySequence) {
+        if (lastEntrySequence < 0 || lastEntrySequence == Long.MAX_VALUE) {
+            throw new IllegalArgumentException("Invalid last entry sequence");
+        }
+        advanceEntrySequencePast(lastEntrySequence);
+    }
+
     private void advanceEntrySequencePast(long entrySequence) {
         if (entrySequence >= nextEntrySequence) {
             nextEntrySequence = entrySequence + 1;
