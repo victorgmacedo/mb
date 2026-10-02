@@ -16,7 +16,7 @@ Módulos:
 - `shared`: parsing FIX e pequenos value objects compartilhados.
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
-- `engine`: consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico e publica eventos FIX.
+- `engine`: consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, liquida trades no ledger e publica eventos FIX.
 - `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e liquidação persistido em PostgreSQL via Spring Data JPA.
 
 O pacote base padrão é `br.com.mb`.
@@ -41,11 +41,14 @@ flowchart LR
 - Antes do matching, compra reserva `price * quantity` no ativo de cotação e venda reserva `quantity` no ativo base.
 - Cancelamento aceito libera a reserva restante da ordem aberta.
 - Funding `35=U1` credita saldo disponível usando `Account(1)`, `ClOrdID(11)`, `Asset(55)` e `Amount(38)`.
+- Funding duplicado com o mesmo `ClOrdID(11)` não duplica crédito dentro da mesma instância do engine.
 - Usa prioridade preço-tempo.
 - Usa preço do maker para trades.
+- Liquida cada trade no ledger consumindo `locked` do vendedor no ativo base e do comprador no ativo de cotação.
+- Compra taker executada abaixo do preço limite libera a diferença bloqueada por price improvement.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não liquida trades no ledger. Também não implementa idempotência de funding, prevenção de self-trade, snapshots ou replay.
+- Ainda não implementa idempotência persistida de funding, prevenção de self-trade, snapshots ou replay.
 
 ## Comportamento Atual do Ledger
 
@@ -85,16 +88,16 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Pendências Mapeadas
 
-- idempotência de funding por `ClOrdID(11)`
-- liquidação dos trades no ledger após matching
-- liberação de sobras do taker após fills
-- liberação de diferença de quote por price improvement em compras
-- teste de conservação de ativos atravessando engine e ledger
+- idempotência persistida de funding por `ClOrdID(11)`
+- atomicidade/reconciliação entre alteração do book em memória e liquidação no ledger
+- prevenção de self-trade
+- snapshots e replay
+- eventos contábeis persistidos/publicados para liquidação
 
 ## Próximo Trabalho Provável
 
-A próxima fase grande deve concluir a integração de liquidação entre engine e ledger:
+A próxima fase grande deve endurecer consistência e replay:
 
-- liquidação após trades
-- liberação de sobras e diferenças por price improvement
-- idempotência de funding por `ClOrdID(11)`
+- idempotência persistida de funding por `ClOrdID(11)`
+- estratégia de rollback/reconciliação quando uma liquidação falhar após matching
+- snapshots/replay do book e comandos processados

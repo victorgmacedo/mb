@@ -14,7 +14,7 @@ sdk use java 27.0.0-amzn
 rtk ./gradlew test
 ```
 
-O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, ledger persistido em PostgreSQL via Spring Data JPA, funding e reserva pré-matching. Liquidação dos trades no ledger, snapshots e replay ainda serão adicionados em fases posteriores.
+O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, ledger persistido em PostgreSQL via Spring Data JPA, funding, reserva pré-matching e liquidação de trades no ledger. Idempotência persistida, snapshots e replay ainda serão adicionados em fases posteriores.
 
 ## Módulos
 
@@ -64,6 +64,6 @@ curl -i -X POST 'http://localhost:8080/commands' \
 
 Para facilitar testes locais, o gateway aceita `|` como delimitador e normaliza para SOH antes de publicar no Kafka.
 
-O engine consome `commands`, converte FIX inbound em comandos tipados, credita funding `35=U1`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, aceita cancelamentos de ordens abertas, libera reserva no cancelamento e publica ExecutionReports FIX em `events`.
+O engine consome `commands`, converte FIX inbound em comandos tipados, credita funding `35=U1`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, liquida fills no ledger, libera price improvement do comprador taker, aceita cancelamentos de ordens abertas, libera reserva no cancelamento e publica ExecutionReports FIX em `events`.
 
-O ledger persiste saldos disponíveis/bloqueados em PostgreSQL. Funding e reserva pré-matching já estão conectados ao engine; liquidação dos fills ainda está pendente.
+O ledger persiste saldos disponíveis/bloqueados em PostgreSQL. Funding, reserva pré-matching, cancelamento e liquidação dos fills já estão conectados ao engine.
