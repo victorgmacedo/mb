@@ -15,15 +15,43 @@ import org.springframework.transaction.annotation.Transactional;
 public class JpaLedger implements Ledger {
 
     private final LedgerBalanceRepository balances;
+    private final ProcessedCommandRepository processedCommands;
 
-    public JpaLedger(LedgerBalanceRepository balances) {
+    public JpaLedger(LedgerBalanceRepository balances, ProcessedCommandRepository processedCommands) {
         this.balances = Objects.requireNonNull(balances, "balances must not be null");
+        this.processedCommands = Objects.requireNonNull(processedCommands, "processedCommands must not be null");
     }
 
     @Override
     @Transactional
     public void credit(AccountId accountId, Asset asset, long amount) {
         balanceForUpdate(accountId, asset).credit(amount);
+    }
+
+    @Override
+    @Transactional
+    public boolean creditFunding(String clientOrderId, AccountId accountId, Asset asset, long amount) {
+        Objects.requireNonNull(clientOrderId, "clientOrderId must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(asset, "asset must not be null");
+
+        var existing = processedCommands.findByCommandTypeAndClientOrderId(ProcessedCommandEntity.FUNDING_CREDIT, clientOrderId);
+        if (existing.isPresent()) {
+            if (!existing.get().matchesFundingCredit(accountId, asset, amount)) {
+                throw new LedgerException("conflicting duplicate funding command");
+            }
+            return false;
+        }
+
+        processedCommands.save(new ProcessedCommandEntity(
+            ProcessedCommandEntity.FUNDING_CREDIT,
+            clientOrderId,
+            accountId.value(),
+            asset.symbol(),
+            amount
+        ));
+        balanceForUpdate(accountId, asset).credit(amount);
+        return true;
     }
 
     @Override

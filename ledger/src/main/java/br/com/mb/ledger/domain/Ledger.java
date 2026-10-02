@@ -6,6 +6,8 @@ public interface Ledger {
 
     void credit(AccountId accountId, Asset asset, long amount);
 
+    boolean creditFunding(String clientOrderId, AccountId accountId, Asset asset, long amount);
+
     void debitAvailable(AccountId accountId, Asset asset, long amount);
 
     void reserve(AccountId accountId, Asset asset, long amount);

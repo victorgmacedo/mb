@@ -41,14 +41,15 @@ flowchart LR
 - Antes do matching, compra reserva `price * quantity` no ativo de cotação e venda reserva `quantity` no ativo base.
 - Cancelamento aceito libera a reserva restante da ordem aberta.
 - Funding `35=U1` credita saldo disponível usando `Account(1)`, `ClOrdID(11)`, `Asset(55)` e `Amount(38)`.
-- Funding duplicado com o mesmo `ClOrdID(11)` não duplica crédito dentro da mesma instância do engine.
+- Funding duplicado com o mesmo `ClOrdID(11)` não duplica crédito, pois o ledger persiste o comando processado em PostgreSQL.
+- Funding duplicado com mesmo `ClOrdID(11)` e payload divergente é rejeitado.
 - Usa prioridade preço-tempo.
 - Usa preço do maker para trades.
 - Liquida cada trade no ledger consumindo `locked` do vendedor no ativo base e do comprador no ativo de cotação.
 - Compra taker executada abaixo do preço limite libera a diferença bloqueada por price improvement.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não implementa idempotência persistida de funding, prevenção de self-trade, snapshots ou replay.
+- Ainda não implementa prevenção de self-trade, snapshots ou replay.
 
 ## Comportamento Atual do Ledger
 
@@ -88,8 +89,8 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Pendências Mapeadas
 
-- idempotência persistida de funding por `ClOrdID(11)`
 - atomicidade/reconciliação entre alteração do book em memória e liquidação no ledger
+- tratamento de corrida simultânea ao persistir o mesmo funding por `ClOrdID(11)`
 - prevenção de self-trade
 - snapshots e replay
 - eventos contábeis persistidos/publicados para liquidação
@@ -98,6 +99,6 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 A próxima fase grande deve endurecer consistência e replay:
 
-- idempotência persistida de funding por `ClOrdID(11)`
 - estratégia de rollback/reconciliação quando uma liquidação falhar após matching
 - snapshots/replay do book e comandos processados
+- eventos contábeis de liquidação

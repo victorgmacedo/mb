@@ -320,6 +320,48 @@ class EngineCommandHandlerTest {
     }
 
     @Test
+    void ignoresDuplicateFundingCreditRecordedByPreviousHandlerInstance() {
+        var publisher = new RecordingPublisher();
+        var ledger = new RecordingLedger();
+        var firstHandler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
+        var secondHandler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
+        var funding = new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=1000|"
+        );
+
+        firstHandler.handle(funding);
+        secondHandler.handle(funding);
+
+        assertEquals(new AssetBalance(1_000, 0), ledger.balanceOf(new AccountId("account-A"), new Asset("BRL")));
+    }
+
+    @Test
+    void rejectsConflictingDuplicateFundingCredit() {
+        var publisher = new RecordingPublisher();
+        var ledger = new RecordingLedger();
+        var handler = new EngineCommandHandler(publisher, "events", line -> {}, ledger);
+
+        handler.handle(new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=1000|"
+        ));
+        handler.handle(new CommandMessage(
+            "commands",
+            "account-A",
+            "8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=2000|"
+        ));
+
+        assertEquals(new AssetBalance(1_000, 0), ledger.balanceOf(new AccountId("account-A"), new Asset("BRL")));
+        assertEquals(
+            "8=FIX.4.4\u000135=j\u000149=engine\u000156=account-A\u000158=conflicting duplicate funding command\u0001",
+            publisher.messages().getLast().value()
+        );
+    }
+
+    @Test
     void rejectsInvalidFundingCredit() {
         var publisher = new RecordingPublisher();
         var handler = fundedHandler(publisher);
@@ -420,12 +462,29 @@ class EngineCommandHandlerTest {
     private static final class RecordingLedger implements Ledger {
 
         private final Map<AccountAsset, AssetBalance> balances = new HashMap<>();
+        private final Map<String, RecordedFundingCredit> fundingCredits = new HashMap<>();
 
         @Override
         public void credit(AccountId accountId, Asset asset, long amount) {
             requirePositive(amount);
             var balance = balanceOf(accountId, asset);
             update(accountId, asset, new AssetBalance(checkedAdd(balance.available(), amount), balance.locked()));
+        }
+
+        @Override
+        public boolean creditFunding(String clientOrderId, AccountId accountId, Asset asset, long amount) {
+            var command = new RecordedFundingCredit(accountId, asset, amount);
+            var existing = fundingCredits.get(clientOrderId);
+            if (existing != null) {
+                if (!existing.equals(command)) {
+                    throw new LedgerException("conflicting duplicate funding command");
+                }
+                return false;
+            }
+
+            fundingCredits.put(clientOrderId, command);
+            credit(accountId, asset, amount);
+            return true;
         }
 
         @Override
@@ -529,6 +588,13 @@ class EngineCommandHandlerTest {
 
     private record AccountAsset(AccountId accountId, Asset asset) {
         private AccountAsset {
+            Objects.requireNonNull(accountId, "accountId must not be null");
+            Objects.requireNonNull(asset, "asset must not be null");
+        }
+    }
+
+    private record RecordedFundingCredit(AccountId accountId, Asset asset, long amount) {
+        private RecordedFundingCredit {
             Objects.requireNonNull(accountId, "accountId must not be null");
             Objects.requireNonNull(asset, "asset must not be null");
         }

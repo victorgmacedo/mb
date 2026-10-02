@@ -16,9 +16,7 @@ import br.com.mb.ledger.jpa.PostgresLedgerFactory;
 import br.com.mb.shared.model.Asset;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
-import java.util.HashSet;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Consumer;
 
 public final class EngineCommandHandler implements CommandHandler {
@@ -32,7 +30,6 @@ public final class EngineCommandHandler implements CommandHandler {
     private final EngineState engineState;
     private final BalanceReservations balanceReservations;
     private final Ledger ledger;
-    private final Set<String> creditedFundingClientOrderIds = new HashSet<>();
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
         this(eventPublisher, eventsTopic, output, PostgresLedgerFactory.create());
@@ -95,10 +92,9 @@ public final class EngineCommandHandler implements CommandHandler {
     }
 
     private void credit(FundingCreditCommand command) {
-        if (!creditedFundingClientOrderIds.add(command.clientOrderId())) {
-            return;
-        }
-        ledger.credit(new AccountId(command.accountId()), new Asset(command.asset()), command.amount());
+        var accountId = new AccountId(command.accountId());
+        var asset = new Asset(command.asset());
+        ledger.creditFunding(command.clientOrderId(), accountId, asset, command.amount());
     }
 
     private void releaseUnsettled(br.com.mb.engine.domain.Order order) {
