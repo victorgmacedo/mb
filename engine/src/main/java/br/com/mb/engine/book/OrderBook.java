@@ -73,6 +73,18 @@ public final class OrderBook {
         return Optional.ofNullable(ordersByClientOrderId.get(clientOrderId));
     }
 
+    public Instrument instrument() {
+        return instrument;
+    }
+
+    public List<BookPriceLevelView> bidLevels() {
+        return bids.priceLevels();
+    }
+
+    public List<BookPriceLevelView> askLevels() {
+        return asks.priceLevels();
+    }
+
     public List<BookOrderView> openOrders() {
         var orders = new ArrayList<BookOrder>();
         orders.addAll(bids.openOrders());

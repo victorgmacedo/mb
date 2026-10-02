@@ -50,4 +50,10 @@ final class BookSide {
             .flatMap(level -> level.orders().stream())
             .toList();
     }
+
+    List<BookPriceLevelView> priceLevels() {
+        return levels.values().stream()
+            .map(BookPriceLevelView::from)
+            .toList();
+    }
 }

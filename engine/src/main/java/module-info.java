@@ -2,6 +2,7 @@ module br.com.mb.engine {
     requires br.com.mb.commandlog;
     requires br.com.mb.ledger;
     requires br.com.mb.shared;
+    requires com.google.protobuf;
 
     exports br.com.mb.engine;
     exports br.com.mb.engine.book;
@@ -9,4 +10,5 @@ module br.com.mb.engine {
     exports br.com.mb.engine.command;
     exports br.com.mb.engine.domain;
     exports br.com.mb.engine.journal;
+    exports br.com.mb.engine.snapshot;
 }

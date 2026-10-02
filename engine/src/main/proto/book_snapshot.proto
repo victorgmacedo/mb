@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package br.com.mb.engine.snapshot.v1;
+
+option java_package = "br.com.mb.engine.snapshot.proto";
+option java_outer_classname = "BookSnapshotProto";
+
+message BookSnapshot {
+  string instrument = 1;
+  repeated PriceLevel bids = 2;
+  repeated PriceLevel asks = 3;
+  uint64 last_entry_sequence = 4;
+  uint32 schema_version = 5;
+}
+
+message PriceLevel {
+  int64 price = 1;
+  repeated OpenOrder orders = 2;
+}
+
+message OpenOrder {
+  string account_id = 1;
+  string client_order_id = 2;
+  int64 remaining_quantity = 3;
+  uint64 entry_sequence = 4;
+  int64 entered_at_epoch_nanos = 5;
+}

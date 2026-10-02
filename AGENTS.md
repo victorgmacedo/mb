@@ -16,7 +16,7 @@ Módulos:
 - `shared`: parsing FIX e pequenos value objects compartilhados.
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
-- `engine`: recupera book via `book-journal`, consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka e publica eventos FIX.
+- `engine`: recupera book via `book-journal`, consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka, publica eventos FIX e possui codec Protobuf para snapshots binários.
 - `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via Spring Data JPA.
 
 O pacote base padrão é `br.com.mb`.
@@ -55,7 +55,7 @@ flowchart LR
 - Compra taker executada abaixo do preço limite publica liberação de price improvement como FIX-like `35=U3`.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não implementa prevenção de self-trade ou snapshots do book.
+- Ainda não implementa prevenção de self-trade nem persistência/restore de snapshots do book.
 
 ## Comportamento Atual do Ledger
 
@@ -99,7 +99,7 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 - reconciliação de liquidações rejeitadas pelo consumidor
 - prevenção de self-trade
-- snapshots do book
+- persistência/restore de snapshots Protobuf do book
 - eventos contábeis persistidos/publicados para liquidação
 
 ## Próximo Trabalho Provável
@@ -107,5 +107,5 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 A próxima fase grande deve endurecer consistência e replay:
 
 - estratégia de reconciliação quando uma liquidação falhar após matching
-- snapshots do book para reduzir tempo de recover
+- persistência/restore de snapshots Protobuf do book para reduzir tempo de recover
 - eventos contábeis de liquidação

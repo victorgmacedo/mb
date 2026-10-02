@@ -1,5 +1,6 @@
 plugins {
     java
+    id("com.google.protobuf") version "0.10.0" apply false
 }
 
 group = "br.com.mb"
