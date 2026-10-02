@@ -34,6 +34,8 @@ rtk ./gradlew test
 
 A verificação local requer Java 27. O wrapper versionado usa Gradle 9.8.0.
 
+Para um passo a passo completo de execução local, testes manuais, inspeção de Kafka/PostgreSQL e troubleshooting, veja [docs/RUNBOOK.md](docs/RUNBOOK.md).
+
 ## Local Kafka
 
 ```bash
