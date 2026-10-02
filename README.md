@@ -1,48 +1,48 @@
 # MB CLOB
 
-Java 27 modular skeleton for a simplified Central Limit Order Book, split into deployable modules for gateway, engine, ledger, and command log concerns.
+Projeto modular em Java 27 para um Central Limit Order Book simplificado, separado em módulos que podem evoluir para deploy e escala independentes: gateway, engine, ledger e command log.
 
-## Requirements
+## Requisitos
 
-- Java 27 installed with SDKMAN.
-- Gradle wrapper configured for Gradle 9.8.0.
-- If Java 27 is not installed locally, Gradle can provision it through the Foojay toolchain resolver.
+- Java 27 instalado com SDKMAN.
+- Gradle wrapper configurado para Gradle 9.8.0.
+- Se Java 27 não estiver instalado localmente, o Gradle pode provisionar via Foojay toolchain resolver.
 
 ```bash
-sdk install java 27-open
-sdk use java 27-open
-./gradlew test
+sdk install java 27.0.0-amzn
+sdk use java 27.0.0-amzn
+rtk ./gradlew test
 ```
 
-The first phase intentionally contains only a compilable skeleton. Matching, balance reservation, Kafka adapters, snapshots, and replay will be added in later phases.
+O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico e ledger em memória. Integração entre engine e ledger, snapshots e replay ainda serão adicionados em fases posteriores.
 
-## Modules
+## Módulos
 
-| Module | Purpose |
+| Módulo | Responsabilidade |
 |---|---|
-| `shared` | Shared contracts and small value objects used by all services. |
-| `command-log` | Future command/event log port and Kafka adapter boundary. |
-| `engine` | Future matching engine and order book runtime. |
-| `ledger` | Future ledger and balance projection runtime. |
-| `gateway` | Future external entry point for HTTP/WebSocket/Kafka command publishing. |
+| `shared` | Parsing FIX e pequenos value objects compartilhados. |
+| `command-log` | Portas e adapters Kafka para comandos/eventos. |
+| `engine` | Intake de ordens FIX, book em memória, matching e eventos de execução. |
+| `ledger` | Contas, saldos `available/locked`, reserva, liberação e liquidação em memória. |
+| `gateway` | Entrada HTTP que recebe FIX textual e publica no Kafka. |
 
-## Current Verification
+## Verificação
 
 ```bash
-./gradlew test
+rtk ./gradlew test
 ```
 
-Local verification requires Java 27. The checked-in wrapper metadata targets Gradle 9.8.0 because that version supports Java 27.
+A verificação local requer Java 27. O wrapper versionado usa Gradle 9.8.0.
 
 ## Local Kafka
 
 ```bash
-docker compose up -d
-./gradlew :engine:runEngine
-./gradlew :gateway:runGateway
+rtk docker compose up -d
+rtk ./gradlew :engine:runEngine
+rtk ./gradlew :gateway:runGateway
 ```
 
-Publish a command through the gateway:
+Publicar um comando pelo gateway:
 
 ```bash
 curl -i -X POST 'http://localhost:8080/commands' \
@@ -50,6 +50,8 @@ curl -i -X POST 'http://localhost:8080/commands' \
   --data-binary '8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|55=BTC/BRL|54=1|44=50000000|38=100000000|'
 ```
 
-For local readability the gateway accepts `|` as a field delimiter and normalizes it to the FIX SOH delimiter before publishing to Kafka.
+Para facilitar testes locais, o gateway aceita `|` como delimitador e normaliza para SOH antes de publicar no Kafka.
 
-The engine currently consumes `commands`, maps inbound FIX into typed engine commands, validates order intake for known instruments and positive price/quantity, stores accepted orders in an in-memory order book by instrument, performs basic limit-order matching with price-time priority, accepts cancel requests for open orders, publishes FIX execution reports to `events`, and prints the processing result. Ledger updates are intentionally not implemented yet.
+O engine consome `commands`, converte FIX inbound em comandos tipados, valida instrumentos conhecidos e preço/quantidade positivos, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, aceita cancelamentos de ordens abertas e publica ExecutionReports FIX em `events`.
+
+O ledger já possui domínio em memória para saldos disponíveis/bloqueados e liquidação de trades, mas ainda não está conectado ao fluxo do engine.

@@ -17,7 +17,7 @@ Módulos:
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
 - `engine`: consome comandos FIX, valida intake, mantém order books em memória, executa matching básico e publica eventos FIX.
-- `ledger`: placeholder para saldos e contabilidade.
+- `ledger`: domínio inicial de saldos em memória com `available`, `locked`, reserva, liberação e liquidação.
 
 O pacote base padrão é `br.com.mb`.
 
@@ -40,7 +40,17 @@ flowchart LR
 - Usa preço do maker para trades.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Ainda não implementa saldos, ledger, prevenção de self-trade, snapshots ou replay.
+- Ainda não integra saldo/ledger ao fluxo do engine. Também não implementa prevenção de self-trade, snapshots ou replay.
+
+## Comportamento Atual do Ledger
+
+- Mantém `LedgerAccount` por conta.
+- Mantém `AssetBalance` por ativo com buckets `available` e `locked`.
+- `credit` aumenta saldo disponível.
+- `reserve` move saldo disponível para bloqueado.
+- `release` devolve saldo bloqueado para disponível.
+- `settle` liquida trades consumindo saldos bloqueados conforme o lado do maker.
+- O ledger valida todos os saldos bloqueados necessários antes de mutar contas na liquidação.
 
 ## Comandos Importantes
 
@@ -66,10 +76,9 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Próximo Trabalho Provável
 
-A próxima fase grande deve introduzir ledger/reserva de saldo:
+A próxima fase grande deve integrar ledger/reserva de saldo ao engine:
 
-- saldos de conta com `available` e `locked`
-- comandos de crédito/débito
 - reserva de quote para compras e base para vendas antes do matching
 - liquidação após trades
-- teste de conservação de ativos
+- liberação de sobras e diferenças por price improvement
+- teste de conservação de ativos atravessando engine e ledger
