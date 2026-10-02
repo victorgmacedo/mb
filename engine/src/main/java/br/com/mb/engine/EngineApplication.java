@@ -4,6 +4,8 @@ import br.com.mb.commandlog.kafka.KafkaCommandConsumer;
 import br.com.mb.commandlog.kafka.KafkaCommandPublisher;
 import br.com.mb.engine.command.EngineCommandHandler;
 import br.com.mb.engine.config.EngineConfig;
+import br.com.mb.engine.journal.KafkaSettlementJournal;
+import br.com.mb.ledger.jpa.PostgresLedgerFactory;
 
 public final class EngineApplication {
 
@@ -18,11 +20,15 @@ public final class EngineApplication {
             config.commandsTopic()
         );
         var eventPublisher = KafkaCommandPublisher.connect(config.bootstrapServers(), "mb-engine-events");
-        var handler = new EngineCommandHandler(eventPublisher, config.eventsTopic(), System.out::println);
+        var settlementPublisher = KafkaCommandPublisher.connect(config.bootstrapServers(), "mb-engine-settlements");
+        var ledger = PostgresLedgerFactory.create();
+        var settlementJournal = new KafkaSettlementJournal(settlementPublisher, config.settlementsTopic());
+        var handler = new EngineCommandHandler(eventPublisher, config.eventsTopic(), System.out::println, ledger, settlementJournal);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             consumer.close();
             eventPublisher.close();
+            settlementPublisher.close();
         }));
 
         while (!Thread.currentThread().isInterrupted()) {

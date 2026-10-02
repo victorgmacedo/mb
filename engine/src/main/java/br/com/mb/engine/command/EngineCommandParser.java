@@ -11,7 +11,7 @@ public final class EngineCommandParser {
             case NEW_ORDER_SINGLE -> parseNewOrderSingle(message);
             case ORDER_CANCEL_REQUEST -> parseCancelOrder(message);
             case FUNDING_CREDIT -> parseFundingCredit(message);
-            case EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
+            case LEDGER_TRADE_SETTLEMENT, LEDGER_RELEASE, EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
                 throw new InvalidFixMessageException("Unsupported inbound FIX MsgType(35): " + message.messageType().tagValue());
         };
     }

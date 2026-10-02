@@ -33,6 +33,15 @@ class FixMessageTest {
     }
 
     @Test
+    void parsesInternalLedgerMessageTypes() {
+        var settlement = FixMessage.parse("8=FIX.4.4|35=U2|49=engine|56=ledger|17=settle-1|");
+        var release = FixMessage.parse("8=FIX.4.4|35=U3|49=engine|56=ledger|17=release-1|");
+
+        assertEquals(FixMessageType.LEDGER_TRADE_SETTLEMENT, settlement.messageType());
+        assertEquals(FixMessageType.LEDGER_RELEASE, release.messageType());
+    }
+
+    @Test
     void rejectsUnsupportedMessageType() {
         var exception = assertThrows(
             InvalidFixMessageException.class,

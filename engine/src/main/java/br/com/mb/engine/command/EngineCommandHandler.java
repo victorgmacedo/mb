@@ -8,6 +8,8 @@ import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.OrderIntake;
+import br.com.mb.engine.journal.ExecutionJournal;
+import br.com.mb.engine.journal.SynchronousLedgerJournal;
 import br.com.mb.engine.ledger.BalanceReservations;
 import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.Ledger;
@@ -29,6 +31,7 @@ public final class EngineCommandHandler implements CommandHandler {
     private final OrderIntake orderIntake;
     private final EngineState engineState;
     private final BalanceReservations balanceReservations;
+    private final ExecutionJournal executionJournal;
     private final Ledger ledger;
 
     public EngineCommandHandler(CommandPublisher eventPublisher, String eventsTopic, Consumer<String> output) {
@@ -41,6 +44,16 @@ public final class EngineCommandHandler implements CommandHandler {
         Consumer<String> output,
         Ledger ledger
     ) {
+        this(eventPublisher, eventsTopic, output, ledger, null);
+    }
+
+    public EngineCommandHandler(
+        CommandPublisher eventPublisher,
+        String eventsTopic,
+        Consumer<String> output,
+        Ledger ledger,
+        ExecutionJournal executionJournal
+    ) {
         this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher must not be null");
         this.eventsTopic = Objects.requireNonNull(eventsTopic, "eventsTopic must not be null");
         this.output = Objects.requireNonNull(output, "output must not be null");
@@ -51,6 +64,9 @@ public final class EngineCommandHandler implements CommandHandler {
         this.orderIntake = new OrderIntake(instrumentCatalog);
         this.engineState = new EngineState();
         this.balanceReservations = new BalanceReservations(instrumentCatalog, ledger);
+        this.executionJournal = executionJournal == null
+            ? new SynchronousLedgerJournal(balanceReservations)
+            : executionJournal;
         this.ledger = ledger;
     }
 
@@ -78,7 +94,7 @@ public final class EngineCommandHandler implements CommandHandler {
                     releaseUnsettled(order);
                     throw exception;
                 }
-                balanceReservations.settle(order, placement);
+                executionJournal.append(order, placement);
                 return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted((NewOrderSingleCommand) command, placement));
             } else if (command instanceof CancelOrderCommand cancelOrder) {
                 balanceReservations.release(engineState.cancel(cancelOrder));
