@@ -13,7 +13,7 @@ public final class LedgerSettlementParser {
         return switch (message.messageType()) {
             case LEDGER_TRADE_SETTLEMENT -> parseTradeSettlement(message);
             case LEDGER_RELEASE -> parseRelease(message);
-            case NEW_ORDER_SINGLE, ORDER_CANCEL_REQUEST, FUNDING_CREDIT, BOOK_ORDER_ACCEPTED, BOOK_ORDER_CANCELLED, EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
+            case NEW_ORDER_SINGLE, ORDER_CANCEL_REQUEST, FUNDING_CREDIT, FUNDING_DEBIT, BOOK_ORDER_ACCEPTED, BOOK_ORDER_CANCELLED, EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
                 throw new InvalidFixMessageException("Unsupported ledger settlement MsgType(35): " + message.messageType().tagValue());
         };
     }

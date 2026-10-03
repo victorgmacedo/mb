@@ -1,16 +1,16 @@
 package br.com.mb.engine.domain;
 
-import br.com.mb.engine.book.OrderBook;
-import br.com.mb.engine.book.PlacementResult;
 import br.com.mb.engine.book.BookOrder;
 import br.com.mb.engine.book.BookOrderView;
+import br.com.mb.engine.book.OrderBook;
+import br.com.mb.engine.book.PlacementResult;
 import br.com.mb.engine.command.CancelOrderCommand;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.time.Instant;
 
 public final class EngineState {
 
@@ -23,8 +23,13 @@ public final class EngineState {
     }
 
     public PlacementResult place(Order order, long entrySequence, Instant enteredAt) {
+        book(order.instrument()).validateSelfTrade(order);
+        return replayAccepted(order, entrySequence, enteredAt);
+    }
+
+    public PlacementResult replayAccepted(Order order, long entrySequence, Instant enteredAt) {
         var book = books.computeIfAbsent(order.instrument(), OrderBook::new);
-        var result = book.place(order, entrySequence, enteredAt);
+        var result = book.replayAccepted(order, entrySequence, enteredAt);
         advanceEntrySequencePast(entrySequence);
         result.trades().stream()
             .filter(trade -> trade.makerLeavesQuantity() == 0)

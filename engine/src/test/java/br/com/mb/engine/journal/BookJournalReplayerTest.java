@@ -33,6 +33,18 @@ class BookJournalReplayerTest {
         assertEquals(Instant.parse("2026-10-02T12:00:03Z"), state.openOrders().get(1).enteredAt());
     }
 
+    @Test
+    void replaysHistoricalSelfTradeWithoutApplyingNewIntakePolicy() {
+        var state = new BookJournalReplayer(InstrumentCatalog.defaultCatalog()).replay(List.of(
+            message("8=FIX.4.4|35=U4|1=account-A|11=sell|55=BTC/BRL|54=2|44=100|38=10|10003=1|10004=2026-10-02T12:00:00Z|"),
+            message("8=FIX.4.4|35=U4|1=account-A|11=buy|55=BTC/BRL|54=1|44=100|38=4|10003=2|10004=2026-10-02T12:00:01Z|")
+        ));
+
+        assertEquals(1, state.openOrders().size());
+        assertEquals(6, state.openOrders().getFirst().remainingQuantity());
+        assertEquals(2, state.lastEntrySequence());
+    }
+
     private static CommandMessage message(String fix) {
         return new CommandMessage("book-journal", "BTC/BRL", fix);
     }

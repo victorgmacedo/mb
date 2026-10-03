@@ -1,6 +1,8 @@
 package br.com.mb.engine.domain;
 
 import br.com.mb.shared.model.Asset;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -29,6 +31,11 @@ public final class InstrumentCatalog {
     public Optional<ListedInstrument> findListing(Instrument instrument) {
         Objects.requireNonNull(instrument, "instrument must not be null");
         return Optional.ofNullable(instruments.get(instrument.symbol()));
+    }
+
+    public List<Instrument> instruments() {
+        return instruments.values().stream().map(ListedInstrument::instrument)
+            .sorted(Comparator.comparing(Instrument::symbol)).toList();
     }
 
     private static ListedInstrument listed(String symbol, String baseAsset, String quoteAsset) {

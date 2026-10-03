@@ -104,6 +104,11 @@ class LedgerSettlementHandlerTest {
         }
 
         @Override
+        public boolean debitFunding(String id, AccountId account, Asset asset, long amount) {
+            throw new UnsupportedOperationException("not used by settlement tests");
+        }
+
+        @Override
         public void debitAvailable(AccountId accountId, Asset asset, long amount) {
             throw unsupported();
         }

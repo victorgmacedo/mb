@@ -4,6 +4,9 @@ module br.com.mb.engine {
     requires br.com.mb.shared;
     requires com.google.protobuf;
     requires java.sql;
+    requires jdk.httpserver;
+
+    exports br.com.mb.engine.http;
 
     exports br.com.mb.engine;
     exports br.com.mb.engine.book;

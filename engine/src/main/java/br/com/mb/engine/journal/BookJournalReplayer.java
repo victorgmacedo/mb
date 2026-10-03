@@ -2,11 +2,11 @@ package br.com.mb.engine.journal;
 
 import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.engine.command.CancelOrderCommand;
+import br.com.mb.engine.command.NewOrderSingleCommand;
 import br.com.mb.engine.command.OrderSide;
 import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.OrderIntake;
-import br.com.mb.engine.command.NewOrderSingleCommand;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
 import java.time.Instant;
@@ -39,7 +39,7 @@ public final class BookJournalReplayer {
     private void replay(EngineState state, CommandMessage message) {
         var fix = FixMessage.parse(message.value());
         switch (fix.messageType()) {
-            case BOOK_ORDER_ACCEPTED -> state.place(orderIntake.accept(new NewOrderSingleCommand(
+            case BOOK_ORDER_ACCEPTED -> state.replayAccepted(orderIntake.accept(new NewOrderSingleCommand(
                 required(fix, 1, "Account"),
                 required(fix, 11, "ClOrdID"),
                 required(fix, 55, "Symbol"),
@@ -55,7 +55,7 @@ public final class BookJournalReplayer {
                 required(fix, 41, "OrigClOrdID"),
                 required(fix, 41, "OrigClOrdID")
             ));
-            case NEW_ORDER_SINGLE, ORDER_CANCEL_REQUEST, FUNDING_CREDIT, LEDGER_TRADE_SETTLEMENT, LEDGER_RELEASE, EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
+            case NEW_ORDER_SINGLE, ORDER_CANCEL_REQUEST, FUNDING_CREDIT, FUNDING_DEBIT, LEDGER_TRADE_SETTLEMENT, LEDGER_RELEASE, EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
                 throw new InvalidFixMessageException("Unsupported book journal MsgType(35): " + fix.messageType().tagValue());
         }
     }

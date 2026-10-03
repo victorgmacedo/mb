@@ -9,7 +9,9 @@ import java.util.Objects;
 import java.util.Properties;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 
 public final class KafkaCommandConsumer implements CommandConsumer {
@@ -18,6 +20,7 @@ public final class KafkaCommandConsumer implements CommandConsumer {
 
     private final Consumer<String, String> consumer;
     private final String topic;
+    private volatile boolean stopping;
 
     public KafkaCommandConsumer(Consumer<String, String> consumer, String topic) {
         this.consumer = Objects.requireNonNull(consumer, "consumer must not be null");
@@ -40,13 +43,35 @@ public final class KafkaCommandConsumer implements CommandConsumer {
     @Override
     public void poll(CommandHandler handler) {
         Objects.requireNonNull(handler, "handler must not be null");
-        var records = consumer.poll(POLL_TIMEOUT);
+        ConsumerRecords<String, String> records;
+        try {
+            records = consumer.poll(POLL_TIMEOUT);
+        } catch (WakeupException exception) {
+            if (stopping) return;
+            throw exception;
+        }
         for (var record : records) {
             handler.handle(new CommandMessage(topic, record.key(), record.value()));
         }
         if (!records.isEmpty()) {
-            consumer.commitSync();
+            try {
+                consumer.commitSync();
+            } catch (WakeupException exception) {
+                if (!stopping) throw exception;
+                // Finish committing the handled batch before leaving the group.
+                consumer.commitSync();
+            }
         }
+    }
+
+    public boolean isStopping() {
+        return stopping;
+    }
+
+    /** Thread-safe Kafka wakeup; only the polling thread closes the consumer. */
+    public void requestStop() {
+        stopping = true;
+        consumer.wakeup();
     }
 
     @Override

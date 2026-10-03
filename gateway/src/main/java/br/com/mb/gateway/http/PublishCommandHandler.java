@@ -4,6 +4,7 @@ import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
+import br.com.mb.shared.http.HttpSupport;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
@@ -36,7 +37,15 @@ final class PublishCommandHandler implements HttpHandler {
             return;
         }
 
-        publisher.publish(new CommandMessage(commandsTopic, fixMessage.kafkaKey(), fixMessage.normalized()));
+        try {
+            publisher.publish(new CommandMessage(commandsTopic, fixMessage.kafkaKey(), fixMessage.normalized()));
+        } catch (InvalidFixMessageException exception) {
+            respond(exchange, 400, "invalid_fix_message: %s\n".formatted(exception.getMessage()));
+            return;
+        } catch (RuntimeException exception) {
+            HttpSupport.error(exchange, 503, "command_log_unavailable");
+            return;
+        }
         respond(exchange, 202, "accepted\n");
     }
 

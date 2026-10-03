@@ -3,11 +3,11 @@ package br.com.mb.commandlog.kafka;
 import br.com.mb.commandlog.CommandMessage;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
-import java.util.Map;
-import java.util.HashMap;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -97,7 +97,7 @@ public final class KafkaTopicReplayer implements AutoCloseable {
             .toList();
     }
 
-    private boolean finished(List<TopicPartition> partitions, java.util.Map<TopicPartition, Long> endOffsets) {
+    private boolean finished(List<TopicPartition> partitions, Map<TopicPartition, Long> endOffsets) {
         for (var partition : partitions) {
             if (consumer.position(partition) < endOffsets.get(partition)) {
                 return false;

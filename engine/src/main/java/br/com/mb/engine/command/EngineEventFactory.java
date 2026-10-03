@@ -31,6 +31,8 @@ public final class EngineEventFactory {
                 0,
                 "Order cancelled"
             ));
+            case FundingDebitCommand debit -> List.of(executionReport(debit.accountId(), debit.clientOrderId(),
+                "accepted-" + debit.clientOrderId(), "0", "0", 0, 0, 0, "Funding debited"));
             case FundingCreditCommand fundingCredit -> List.of(executionReport(
                 fundingCredit.accountId(),
                 fundingCredit.clientOrderId(),

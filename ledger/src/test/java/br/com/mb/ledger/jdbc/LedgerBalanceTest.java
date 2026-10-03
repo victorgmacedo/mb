@@ -1,4 +1,4 @@
-package br.com.mb.ledger.jpa;
+package br.com.mb.ledger.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -7,11 +7,11 @@ import br.com.mb.ledger.domain.AssetBalance;
 import br.com.mb.ledger.domain.LedgerException;
 import org.junit.jupiter.api.Test;
 
-class LedgerBalanceEntityTest {
+class LedgerBalanceTest {
 
     @Test
     void creditIncreasesAvailableBalance() {
-        var balance = new LedgerBalanceEntity("account-A", "BRL");
+        var balance = new LedgerBalance("account-A", "BRL");
 
         balance.credit(1_000);
 
@@ -20,7 +20,7 @@ class LedgerBalanceEntityTest {
 
     @Test
     void reserveMovesAvailableToLockedBalance() {
-        var balance = new LedgerBalanceEntity("account-A", "BRL");
+        var balance = new LedgerBalance("account-A", "BRL");
 
         balance.credit(1_000);
         balance.reserve(400);
@@ -30,7 +30,7 @@ class LedgerBalanceEntityTest {
 
     @Test
     void reserveRejectsInsufficientAvailableBalance() {
-        var balance = new LedgerBalanceEntity("account-A", "BRL");
+        var balance = new LedgerBalance("account-A", "BRL");
 
         var exception = assertThrows(LedgerException.class, () -> balance.reserve(1));
 
@@ -39,7 +39,7 @@ class LedgerBalanceEntityTest {
 
     @Test
     void releaseMovesLockedToAvailableBalance() {
-        var balance = new LedgerBalanceEntity("account-A", "BRL");
+        var balance = new LedgerBalance("account-A", "BRL");
 
         balance.credit(1_000);
         balance.reserve(400);
@@ -50,7 +50,7 @@ class LedgerBalanceEntityTest {
 
     @Test
     void creditRejectsBalanceOverflow() {
-        var balance = new LedgerBalanceEntity("account-A", "BRL");
+        var balance = new LedgerBalance("account-A", "BRL");
 
         balance.credit(Long.MAX_VALUE);
         var exception = assertThrows(LedgerException.class, () -> balance.credit(1));

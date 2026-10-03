@@ -11,7 +11,7 @@ class FixMessageTest {
     void parsesReadableFixAndNormalizesDelimiter() {
         var message = FixMessage.parse("8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|");
 
-        assertEquals("account-A", message.kafkaKey());
+        assertEquals("gateway", message.kafkaKey());
         assertEquals(FixMessageType.NEW_ORDER_SINGLE, message.messageType());
         assertEquals("8=FIX.4.4\u000135=D\u000149=gateway\u000156=engine\u00011=account-A\u000111=order-1\u0001", message.normalized());
     }
@@ -28,7 +28,7 @@ class FixMessageTest {
     void parsesFundingCreditMessageType() {
         var message = FixMessage.parse("8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=1000|");
 
-        assertEquals("account-A", message.kafkaKey());
+        assertEquals("BRL", message.kafkaKey());
         assertEquals(FixMessageType.FUNDING_CREDIT, message.messageType());
     }
 

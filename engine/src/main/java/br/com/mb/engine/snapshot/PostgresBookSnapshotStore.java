@@ -1,17 +1,18 @@
 package br.com.mb.engine.snapshot;
 
 import br.com.mb.shared.logging.StructuredLogger;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 
 public final class PostgresBookSnapshotStore implements BookSnapshotStore {
 
@@ -27,7 +28,7 @@ public final class PostgresBookSnapshotStore implements BookSnapshotStore {
         this.password = password;
     }
 
-    public static PostgresBookSnapshotStore fromEnvironment(java.util.Map<String, String> environment) {
+    public static PostgresBookSnapshotStore fromEnvironment(Map<String, String> environment) {
         return new PostgresBookSnapshotStore(
             environment.getOrDefault("MB_LEDGER_JDBC_URL", "jdbc:postgresql://localhost:5432/mb"),
             environment.getOrDefault("MB_LEDGER_USERNAME", "mb"),

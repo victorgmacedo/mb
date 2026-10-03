@@ -46,3 +46,10 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+# Local credentials and runtime output
+.env
+.env.*
+!.env.example
+*.log
+__pycache__/

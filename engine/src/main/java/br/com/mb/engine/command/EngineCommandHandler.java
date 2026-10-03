@@ -1,14 +1,16 @@
 package br.com.mb.engine.command;
 
-import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.commandlog.CommandHandler;
 import br.com.mb.commandlog.CommandMessage;
+import br.com.mb.commandlog.CommandPublisher;
+import br.com.mb.engine.book.BookOrder;
 import br.com.mb.engine.book.PlacementResult;
+import br.com.mb.engine.domain.ClientOrderId;
 import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
+import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.OrderIntake;
-import br.com.mb.engine.domain.ClientOrderId;
 import br.com.mb.engine.journal.BookJournal;
 import br.com.mb.engine.journal.ExecutionJournal;
 import br.com.mb.engine.journal.NoOpBookJournal;
@@ -17,12 +19,12 @@ import br.com.mb.engine.ledger.BalanceReservations;
 import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.Ledger;
 import br.com.mb.ledger.domain.LedgerException;
-import br.com.mb.ledger.jpa.PostgresLedgerFactory;
-import br.com.mb.shared.model.Asset;
+import br.com.mb.ledger.jdbc.PostgresLedgerFactory;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
-import java.util.Objects;
+import br.com.mb.shared.model.Asset;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 public final class EngineCommandHandler implements CommandHandler {
@@ -107,6 +109,7 @@ public final class EngineCommandHandler implements CommandHandler {
                 if (engineState.hasOpenOrder(order.clientOrderId())) {
                     throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
                 }
+                engineState.book(order.instrument()).validateSelfTrade(order);
                 balanceReservations.reserve(order);
                 var entrySequence = engineState.nextEntrySequence();
                 var enteredAt = Instant.now();
@@ -124,10 +127,16 @@ public final class EngineCommandHandler implements CommandHandler {
                 var originalClientOrderId = new ClientOrderId(cancelOrder.originalClientOrderId());
                 var openOrder = engineState.openOrder(originalClientOrderId)
                     .orElseThrow(() -> new InvalidOrderException("open order not found: " + originalClientOrderId.value()));
+                if (!openOrder.accountId().value().equals(cancelOrder.accountId())) {
+                    throw new InvalidOrderException("order belongs to another account");
+                }
                 bookJournal.appendCancelled(openOrder);
                 balanceReservations.release(engineState.cancel(cancelOrder));
             } else if (command instanceof FundingCreditCommand fundingCredit) {
                 credit(fundingCredit);
+            } else if (command instanceof FundingDebitCommand debit) {
+                ledger.debitFunding(debit.clientOrderId(), new AccountId(debit.accountId()),
+                    new Asset(debit.asset()), debit.amount());
             }
             return EngineCommandResult.accepted(message.key(), command.getClass().getSimpleName(), eventFactory.accepted(command));
         } catch (InvalidFixMessageException | InvalidOrderException | LedgerException exception) {
@@ -141,7 +150,7 @@ public final class EngineCommandHandler implements CommandHandler {
         ledger.creditFunding(command.clientOrderId(), accountId, asset, command.amount());
     }
 
-    private void releaseUnsettled(br.com.mb.engine.domain.Order order) {
-        balanceReservations.release(br.com.mb.engine.book.BookOrder.from(order));
+    private void releaseUnsettled(Order order) {
+        balanceReservations.release(BookOrder.from(order));
     }
 }

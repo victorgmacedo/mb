@@ -1,0 +1,14 @@
+[
+  {
+    "name": "br.com.mb.engine.snapshot.proto.BookSnapshotProto$BookSnapshot",
+    "allDeclaredFields": true
+  },
+  {
+    "name": "br.com.mb.engine.snapshot.proto.BookSnapshotProto$PriceLevel",
+    "allDeclaredFields": true
+  },
+  {
+    "name": "br.com.mb.engine.snapshot.proto.BookSnapshotProto$OpenOrder",
+    "allDeclaredFields": true
+  }
+]

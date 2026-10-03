@@ -2,8 +2,8 @@ package br.com.mb.engine.book;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.mb.engine.domain.AccountId;
 import br.com.mb.engine.domain.ClientOrderId;
@@ -174,9 +174,52 @@ class OrderBookTest {
         assertEquals(new ClientOrderId("ask-2"), result.trades().get(1).makerClientOrderId());
     }
 
+    @Test
+    void rejectsSelfTradeForBothSidesWithoutMutatingBook() {
+        for (var side : Side.values()) {
+            var book = new OrderBook(BTC_BRL);
+            var opposite = side == Side.BUY ? Side.SELL : Side.BUY;
+            var maker = order("maker", opposite, 100, 10);
+            book.add(maker);
+            var taker = new Order(maker.accountId(), new ClientOrderId("taker"), BTC_BRL,
+                side, 100, 4, OrderStatus.ACCEPTED);
+
+            assertThrows(InvalidOrderException.class, () -> book.place(taker));
+
+            assertEquals(10, book.find(maker.clientOrderId()).orElseThrow().remainingQuantity());
+            assertFalse(book.find(taker.clientOrderId()).isPresent());
+        }
+    }
+
+    @Test
+    void rejectsEntireOrderWhenSelfTradeWouldFollowExternalFill() {
+        var book = new OrderBook(BTC_BRL);
+        book.add(order("external", Side.SELL, 99, 4));
+        var own = new Order(new AccountId("buyer-A"), new ClientOrderId("own"), BTC_BRL,
+            Side.SELL, 100, 10, OrderStatus.ACCEPTED);
+        book.add(own);
+        var before = book.openOrders();
+
+        assertThrows(InvalidOrderException.class, () -> book.place(order("taker", Side.BUY, 100, 5)));
+
+        assertEquals(before, book.openOrders());
+    }
+
+    @Test
+    void allowsExternalFillThatFinishesBeforeOwnOrderAndNonCrossingOwnOrder() {
+        var book = new OrderBook(BTC_BRL);
+        book.add(order("external", Side.SELL, 100, 4));
+        book.add(new Order(new AccountId("buyer-A"), new ClientOrderId("own"), BTC_BRL,
+            Side.SELL, 100, 10, OrderStatus.ACCEPTED));
+
+        assertTrue(book.place(order("taker", Side.BUY, 100, 4)).fullyFilled());
+        assertTrue(book.place(order("non-crossing", Side.BUY, 99, 1)).restingOrder().isPresent());
+        assertEquals(10, book.find(new ClientOrderId("own")).orElseThrow().remainingQuantity());
+    }
+
     private static Order order(String clientOrderId, Side side, long price, long quantity) {
         return new Order(
-            new AccountId("account-A"),
+            new AccountId(side == Side.BUY ? "buyer-A" : "seller-A"),
             new ClientOrderId(clientOrderId),
             BTC_BRL,
             side,

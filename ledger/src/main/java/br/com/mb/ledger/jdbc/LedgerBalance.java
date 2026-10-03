@@ -1,49 +1,27 @@
-package br.com.mb.ledger.jpa;
+package br.com.mb.ledger.jdbc;
 
 import br.com.mb.ledger.domain.AssetBalance;
 import br.com.mb.ledger.domain.LedgerException;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-import jakarta.persistence.Version;
 
-@Entity
-@Table(
-    name = "ledger_balances",
-    uniqueConstraints = @UniqueConstraint(name = "uk_ledger_balance_account_asset", columnNames = {"account_id", "asset_symbol"})
-)
-public class LedgerBalanceEntity {
+final class LedgerBalance {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(name = "account_id", nullable = false, length = 128)
     private String accountId;
 
-    @Column(name = "asset_symbol", nullable = false, length = 32)
     private String assetSymbol;
 
-    @Column(name = "available", nullable = false)
     private long available;
 
-    @Column(name = "locked", nullable = false)
     private long locked;
 
-    @Version
-    @Column(name = "version", nullable = false)
-    private long version;
-
-    protected LedgerBalanceEntity() {
-    }
-
-    LedgerBalanceEntity(String accountId, String assetSymbol) {
+    LedgerBalance(String accountId, String assetSymbol) {
         this.accountId = accountId;
         this.assetSymbol = assetSymbol;
+    }
+
+    LedgerBalance(String accountId, String assetSymbol, long available, long locked) {
+        this(accountId, assetSymbol);
+        this.available = available;
+        this.locked = locked;
     }
 
     AssetBalance toBalance() {

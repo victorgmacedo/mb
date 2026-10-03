@@ -1,5 +1,8 @@
 package br.com.mb.engine.book;
 
+import br.com.mb.engine.domain.InvalidOrderException;
+import br.com.mb.engine.domain.Order;
+import br.com.mb.engine.domain.Side;
 import java.util.Comparator;
 import java.util.List;
 import java.util.NavigableMap;
@@ -43,6 +46,27 @@ final class BookSide {
             return Optional.empty();
         }
         return Optional.of(levels.firstEntry().getValue());
+    }
+
+    void validateSelfTrade(Order order) {
+        var remaining = order.quantity();
+        for (var level : levels.values()) {
+            var crosses = order.side() == Side.BUY
+                ? order.price() >= level.price()
+                : order.price() <= level.price();
+            if (!crosses) {
+                return;
+            }
+            for (var maker = level.head(); maker != null; maker = maker.next) {
+                if (order.accountId().equals(maker.accountId())) {
+                    throw new InvalidOrderException("self-trade prevented: " + maker.clientOrderId().value());
+                }
+                remaining -= Math.min(remaining, maker.remainingQuantity());
+                if (remaining == 0) {
+                    return;
+                }
+            }
+        }
     }
 
     List<BookOrder> openOrders() {

@@ -5,13 +5,13 @@ import br.com.mb.engine.domain.Instrument;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.time.Instant;
 
 public final class OrderBook {
 
@@ -33,6 +33,12 @@ public final class OrderBook {
     }
 
     public PlacementResult place(Order order, long entrySequence, Instant enteredAt) {
+        validateSelfTrade(order);
+        return replayAccepted(order, entrySequence, enteredAt);
+    }
+
+    /** Reconstructs accepted historical mutations without applying current intake policy. */
+    public PlacementResult replayAccepted(Order order, long entrySequence, Instant enteredAt) {
         if (!instrument.equals(order.instrument())) {
             throw new InvalidOrderException("order instrument does not match book instrument");
         }
@@ -49,6 +55,10 @@ public final class OrderBook {
         }
 
         return new PlacementResult(trades, Optional.empty());
+    }
+
+    public void validateSelfTrade(Order order) {
+        oppositeSideFor(order.side()).validateSelfTrade(order);
     }
 
     public BookOrder cancel(ClientOrderId clientOrderId) {

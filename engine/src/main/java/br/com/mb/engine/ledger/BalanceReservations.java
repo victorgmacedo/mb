@@ -3,13 +3,13 @@ package br.com.mb.engine.ledger;
 import br.com.mb.engine.book.BookOrder;
 import br.com.mb.engine.book.PlacementResult;
 import br.com.mb.engine.book.Trade;
-import br.com.mb.engine.domain.AccountId;
 import br.com.mb.engine.domain.Instrument;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.ListedInstrument;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
+import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.Ledger;
 import br.com.mb.ledger.domain.LedgerException;
 import br.com.mb.ledger.domain.SettlementSide;
@@ -31,8 +31,8 @@ public final class BalanceReservations {
         var listing = listing(order.instrument());
         try {
             switch (order.side()) {
-                case BUY -> ledger.reserve(account(order.accountId()), listing.quoteAsset(), notional(order.price(), order.quantity()));
-                case SELL -> ledger.reserve(account(order.accountId()), listing.baseAsset(), order.quantity());
+                case BUY -> ledger.reserve(account(order.accountId().value()), listing.quoteAsset(), notional(order.price(), order.quantity()));
+                case SELL -> ledger.reserve(account(order.accountId().value()), listing.baseAsset(), order.quantity());
             }
         } catch (LedgerException exception) {
             throw new InvalidOrderException(exception.getMessage());
@@ -44,8 +44,8 @@ public final class BalanceReservations {
         var listing = listing(order.instrument());
         try {
             switch (order.side()) {
-                case BUY -> ledger.release(account(order.accountId()), listing.quoteAsset(), notional(order.price(), order.remainingQuantity()));
-                case SELL -> ledger.release(account(order.accountId()), listing.baseAsset(), order.remainingQuantity());
+                case BUY -> ledger.release(account(order.accountId().value()), listing.quoteAsset(), notional(order.price(), order.remainingQuantity()));
+                case SELL -> ledger.release(account(order.accountId().value()), listing.baseAsset(), order.remainingQuantity());
             }
         } catch (LedgerException exception) {
             throw new InvalidOrderException(exception.getMessage());
@@ -59,8 +59,8 @@ public final class BalanceReservations {
         try {
             for (var trade : placement.trades()) {
                 ledger.settle(new TradeSettlementInstruction(
-                    account(trade.makerAccountId()),
-                    account(trade.takerAccountId()),
+                    account(trade.makerAccountId().value()),
+                    account(trade.takerAccountId().value()),
                     settlementSide(trade.makerSide()),
                     listing.baseAsset(),
                     listing.quoteAsset(),
@@ -79,8 +79,8 @@ public final class BalanceReservations {
             .orElseThrow(() -> new InvalidOrderException("unknown instrument: " + instrument.symbol()));
     }
 
-    private static br.com.mb.ledger.domain.AccountId account(AccountId accountId) {
-        return new br.com.mb.ledger.domain.AccountId(accountId.value());
+    private static AccountId account(String accountId) {
+        return new AccountId(accountId);
     }
 
     private void releaseTakerPriceImprovement(Order takerOrder, ListedInstrument listing, Trade trade) {
@@ -88,7 +88,7 @@ public final class BalanceReservations {
             return;
         }
         ledger.release(
-            account(takerOrder.accountId()),
+            account(takerOrder.accountId().value()),
             listing.quoteAsset(),
             notional(takerOrder.price() - trade.price(), trade.quantity())
         );

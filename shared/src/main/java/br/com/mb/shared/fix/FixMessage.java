@@ -41,9 +41,9 @@ public final class FixMessage {
     }
 
     public String kafkaKey() {
-        return field(1)
+        return field(55)
             .or(() -> field(49))
-            .orElseThrow(() -> new InvalidFixMessageException("FIX message requires Account(1) or SenderCompID(49)"));
+            .orElseThrow(() -> new InvalidFixMessageException("FIX message requires Symbol/Asset(55) or SenderCompID(49)"));
     }
 
     public Optional<String> field(int tag) {

@@ -13,6 +13,16 @@ class EngineCommandParserTest {
     private final EngineCommandParser parser = new EngineCommandParser();
 
     @Test
+    void parsesFundingDebitAndRequiresCancelAccount() {
+        var debit = assertInstanceOf(FundingDebitCommand.class, parser.parse(FixMessage.parse(
+            "8=FIX.4.4|35=U6|1=A|11=withdrawal|55=BRL|38=25|")));
+        assertEquals(25, debit.amount());
+        assertEquals("A", debit.accountId());
+        assertThrows(InvalidFixMessageException.class, () -> parser.parse(FixMessage.parse(
+            "8=FIX.4.4|35=F|49=gateway|11=cancel|41=order|")));
+    }
+
+    @Test
     void mapsNewOrderSingleFields() {
         var command = parser.parse(FixMessage.parse(
             "8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|55=BTC/BRL|54=1|44=50000000|38=100000000|"

@@ -10,6 +10,8 @@ public interface Ledger {
 
     void debitAvailable(AccountId accountId, Asset asset, long amount);
 
+    boolean debitFunding(String clientOrderId, AccountId accountId, Asset asset, long amount);
+
     void reserve(AccountId accountId, Asset asset, long amount);
 
     void release(AccountId accountId, Asset asset, long amount);

@@ -6,6 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.commandlog.CommandPublisher;
+import br.com.mb.engine.book.BookOrder;
+import br.com.mb.engine.domain.EngineState;
+import br.com.mb.engine.domain.Order;
+import br.com.mb.engine.journal.BookJournal;
 import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.AssetBalance;
 import br.com.mb.ledger.domain.Ledger;
@@ -13,14 +17,46 @@ import br.com.mb.ledger.domain.LedgerException;
 import br.com.mb.ledger.domain.SettlementSide;
 import br.com.mb.ledger.domain.TradeSettlementInstruction;
 import br.com.mb.shared.model.Asset;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 class EngineCommandHandlerTest {
+
+    @Test
+    void rejectsForeignCancellationAndDebitsOnlyAvailableFundsIdempotently() {
+        var ledger = new RecordingLedger();
+        ledger.credit(new AccountId("buyer"), new Asset("BRL"), 1_100);
+        var state = new EngineState();
+        var cancelled = new ArrayList<String>();
+        var journal = new BookJournal() {
+            public void appendAccepted(Order order, long sequence, Instant enteredAt) { }
+            public void appendCancelled(BookOrder order) { cancelled.add(order.clientOrderId().value()); }
+        };
+        var handler = new EngineCommandHandler(new RecordingPublisher(), "events", line -> {}, ledger,
+            null, journal, state);
+        assertTrue(handler.classify(new CommandMessage("commands", "BTC/BRL",
+            "8=FIX.4.4|35=D|1=buyer|11=reserved|55=BTC/BRL|54=1|44=100|38=10|")).accepted());
+        var foreign = handler.classify(new CommandMessage("commands", "BTC/BRL",
+            "8=FIX.4.4|35=F|1=other|11=cancel|41=reserved|"));
+        assertFalse(foreign.accepted());
+        assertTrue(cancelled.isEmpty());
+        assertEquals(1, state.openOrders().size());
+        var debit = new CommandMessage("commands", "BRL", "8=FIX.4.4|35=U6|1=buyer|11=debit|55=BRL|38=50|");
+        assertTrue(handler.classify(debit).accepted());
+        assertTrue(handler.classify(debit).accepted());
+        assertEquals(new AssetBalance(50, 1_000), ledger.balanceOf(new AccountId("buyer"), new Asset("BRL")));
+        assertFalse(handler.classify(new CommandMessage("commands", "BRL",
+            "8=FIX.4.4|35=U6|1=buyer|11=debit|55=BRL|38=60|")).accepted());
+        assertFalse(handler.classify(new CommandMessage("commands", "BRL",
+            "8=FIX.4.4|35=U6|1=buyer|11=too-much|55=BRL|38=51|")).accepted());
+        assertEquals(new AssetBalance(50, 1_000), ledger.balanceOf(new AccountId("buyer"), new Asset("BRL")));
+    }
 
     @Test
     void acceptsNewOrderSingleFixCommandAndBuildsExecutionReport() {
@@ -90,7 +126,7 @@ class EngineCommandHandlerTest {
         var message = new CommandMessage(
             "commands",
             "account-A",
-            "8=FIX.4.4|35=F|49=gateway|56=engine|11=order-1|41=order-0|"
+            "8=FIX.4.4|35=F|49=gateway|56=engine|1=account-A|11=order-1|41=order-0|"
         );
 
         handler.handle(message);
@@ -101,7 +137,7 @@ class EngineCommandHandlerTest {
         assertEquals("events", publisher.messages().get(1).topic());
         assertEquals("account-A", publisher.messages().get(1).key());
         assertEquals(
-            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=gateway\u000111=order-1\u000117=accepted-order-1\u0001150=4\u000139=4\u000131=0\u000132=0\u0001151=0\u000158=Order cancelled\u0001",
+            "8=FIX.4.4\u000135=8\u000149=engine\u000156=gateway\u00011=account-A\u000111=order-1\u000117=accepted-order-1\u0001150=4\u000139=4\u000131=0\u000132=0\u0001151=0\u000158=Order cancelled\u0001",
             publisher.messages().get(1).value()
         );
     }
@@ -224,7 +260,7 @@ class EngineCommandHandlerTest {
         var message = new CommandMessage(
             "commands",
             "account-A",
-            "8=FIX.4.4|35=F|49=gateway|56=engine|11=cancel-1|41=missing|"
+            "8=FIX.4.4|35=F|49=gateway|56=engine|1=account-A|11=cancel-1|41=missing|"
         );
 
         handler.handle(message);
@@ -440,11 +476,53 @@ class EngineCommandHandlerTest {
         );
     }
 
+    @Test
+    void rejectsSelfTradeBeforeReservationJournalAndSettlement() {
+        var ledger = new RecordingLedger();
+        var account = new AccountId("account-A");
+        var base = new Asset("BTC");
+        var quote = new Asset("BRL");
+        ledger.credit(account, base, 10);
+        ledger.credit(account, quote, 1_000);
+        var acceptedIds = new ArrayList<String>();
+        var executions = new ArrayList<String>();
+        var state = new EngineState();
+        var journal = new BookJournal() {
+            @Override
+            public void appendAccepted(Order order, long sequence, Instant enteredAt) {
+                acceptedIds.add(order.clientOrderId().value());
+            }
+
+            @Override
+            public void appendCancelled(BookOrder order) {
+                throw new AssertionError("unexpected cancellation");
+            }
+        };
+        var handler = new EngineCommandHandler(new RecordingPublisher(), "events", line -> {}, ledger,
+            (order, placement) -> executions.add(order.clientOrderId().value()), journal, state);
+        assertTrue(handler.classify(new CommandMessage("commands", "account-A",
+            "8=FIX.4.4|35=D|1=account-A|11=sell-own|55=BTC/BRL|54=2|44=100|38=10|")).accepted());
+        var before = state.openOrders();
+
+        var result = handler.classify(new CommandMessage("commands", "account-A",
+            "8=FIX.4.4|35=D|1=account-A|11=buy-own|55=BTC/BRL|54=1|44=100|38=10|"));
+
+        assertFalse(result.accepted());
+        assertEquals("self-trade prevented: sell-own", result.detail());
+        assertTrue(result.eventFixMessages().getFirst().contains("35=j"));
+        assertEquals(new AssetBalance(1_000, 0), ledger.balanceOf(account, quote));
+        assertEquals(new AssetBalance(0, 10), ledger.balanceOf(account, base));
+        assertEquals(before, state.openOrders());
+        assertEquals(1, state.lastEntrySequence());
+        assertEquals(List.of("sell-own"), acceptedIds);
+        assertEquals(List.of("sell-own"), executions);
+    }
+
     private static EngineCommandHandler fundedHandler(RecordingPublisher publisher, Funding... funds) {
         return fundedHandler(publisher, line -> {}, funds);
     }
 
-    private static EngineCommandHandler fundedHandler(RecordingPublisher publisher, java.util.function.Consumer<String> output, Funding... funds) {
+    private static EngineCommandHandler fundedHandler(RecordingPublisher publisher, Consumer<String> output, Funding... funds) {
         var ledger = new RecordingLedger();
         for (var funding : funds) {
             ledger.credit(new AccountId(funding.accountId()), new Asset(funding.asset()), funding.amount());
@@ -463,6 +541,7 @@ class EngineCommandHandlerTest {
 
         private final Map<AccountAsset, AssetBalance> balances = new HashMap<>();
         private final Map<String, RecordedFundingCredit> fundingCredits = new HashMap<>();
+        private final Map<String, RecordedFundingCredit> fundingDebits = new HashMap<>();
         private final List<String> settlementExecutionIds = new ArrayList<>();
         private final List<String> releaseExecutionIds = new ArrayList<>();
 
@@ -486,6 +565,19 @@ class EngineCommandHandlerTest {
 
             fundingCredits.put(clientOrderId, command);
             credit(accountId, asset, amount);
+            return true;
+        }
+
+        @Override
+        public boolean debitFunding(String id, AccountId account, Asset asset, long amount) {
+            var payload = new RecordedFundingCredit(account, asset, amount);
+            var existing = fundingDebits.get(id);
+            if (existing != null) {
+                if (!existing.equals(payload)) throw new LedgerException("conflicting duplicate ledger command");
+                return false;
+            }
+            debitAvailable(account, asset, amount);
+            fundingDebits.put(id, payload);
             return true;
         }
 

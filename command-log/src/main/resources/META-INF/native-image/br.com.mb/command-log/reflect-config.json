@@ -1,0 +1,34 @@
+[
+  {
+    "name": "org.apache.kafka.common.security.oauthbearer.DefaultJwtRetriever",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.apache.kafka.common.security.oauthbearer.DefaultJwtValidator",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.apache.kafka.common.serialization.StringSerializer",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.apache.kafka.common.serialization.StringDeserializer",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.apache.kafka.clients.consumer.RangeAssignor",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.apache.kafka.clients.consumer.CooperativeStickyAssignor",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.apache.kafka.common.metrics.JmxReporter",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.apache.kafka.common.security.ssl.DefaultSslEngineFactory",
+    "allDeclaredConstructors": true
+  }
+]

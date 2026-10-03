@@ -11,9 +11,9 @@ import br.com.mb.engine.domain.Instrument;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.OrderStatus;
 import br.com.mb.engine.domain.Side;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
 class KafkaBookJournalTest {

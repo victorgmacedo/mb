@@ -9,6 +9,7 @@ import br.com.mb.engine.domain.ClientOrderId;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.journal.BookJournalReplayer;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,7 +24,7 @@ class BookRecoveryTest {
             accepted("seller", "sell-2", "2", 100, 7, 2),
             accepted("buyer", "buy-1", "1", 100, 4, 3));
         var tail = List.of(accepted("buyer", "buy-2", "1", 100, 8, 4));
-        var full = new java.util.ArrayList<>(prefix);
+        var full = new ArrayList<>(prefix);
         full.addAll(tail);
         var expected = new BookJournalReplayer(InstrumentCatalog.defaultCatalog()).replay(full);
         var prefixState = new BookJournalReplayer(InstrumentCatalog.defaultCatalog()).replay(prefix);

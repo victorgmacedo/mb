@@ -3,6 +3,7 @@ package br.com.mb.shared.logging;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.spi.LoggingEventBuilder;
 
 public final class StructuredLogger {
 
@@ -31,8 +32,8 @@ public final class StructuredLogger {
         addKeyValues(builder, keyValues).log(event);
     }
 
-    private static org.slf4j.spi.LoggingEventBuilder addKeyValues(
-        org.slf4j.spi.LoggingEventBuilder builder,
+    private static LoggingEventBuilder addKeyValues(
+        LoggingEventBuilder builder,
         Object... keyValues
     ) {
         if (keyValues.length % 2 != 0) {
