@@ -1,6 +1,6 @@
 # Memória do Projeto
 
-Este projeto é uma implementação modular Java 27 de um CLOB sob o pacote `br.com.mb`.
+Este projeto é uma implementação modular Java 25 de um CLOB sob o pacote `br.com.mb`.
 
 Sempre execute comandos de shell via `rtk` neste workspace, por exemplo:
 
@@ -17,7 +17,7 @@ Módulos:
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
 - `engine`: recupera book via `book-journal`, consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka, publica eventos FIX e possui codec Protobuf para snapshots binários.
-- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via Spring Data JPA.
+- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via JDBC.
 
 O pacote base padrão é `br.com.mb`.
 
@@ -36,7 +36,7 @@ flowchart LR
 
 ## Comportamento Atual do Engine
 
-- Suporta FIX inbound `35=D` NewOrderSingle, `35=F` OrderCancelRequest e `35=U1` FundingCredit interno.
+- Suporta FIX inbound `35=D` NewOrderSingle, `35=F` OrderCancelRequest e `35=U1` FundingCredit e `35=U6` FundingDebit internos.
 - Mantém um `OrderBook` em memória por instrumento.
 - Instrumentos conhecidos atualmente: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`.
 - O catálogo do engine mapeia instrumento para base/cotação.
@@ -57,15 +57,15 @@ flowchart LR
 - Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
 - Persiste checkpoints Protobuf em PostgreSQL (`bytea`), com offsets por partição, schema, checksum e timestamp; restaura o último válido antes do replay incremental.
 - `runBookSnapshots` gera checkpoints periódicos em processo separado a partir do journal, fora do matching; suporta `--args=--once`.
-- Ainda não implementa prevenção de self-trade.
+- Previne self-trade por Account(1): rejeita integralmente a nova ordem se o matching preço-tempo alcançar uma ordem da mesma conta, antes de reservar saldo ou publicar journal.
 
 ## Comportamento Atual do Ledger
 
-- O runtime padrão usa `PostgresLedgerFactory` e `JpaLedger`.
+- O runtime padrão usa `PostgresLedgerFactory` e `JdbcLedger`.
 - Persistência em PostgreSQL na tabela `ledger_balances`.
-- Usa Spring Data JPA 4.1.x via Spring Boot BOM 4.1.1.
+- Usa JDBC PostgreSQL com schema explícito e transações READ COMMITTED, sem Spring/JPA/Hibernate.
 - Configuração padrão local: `jdbc:postgresql://localhost:5432/mb`, usuário `mb`, senha `mb`.
-- Variáveis suportadas: `MB_LEDGER_JDBC_URL`, `MB_LEDGER_USERNAME`, `MB_LEDGER_PASSWORD`, `MB_LEDGER_HBM2DDL_AUTO`, `MB_LEDGER_SHOW_SQL`.
+- Variáveis suportadas: `MB_LEDGER_JDBC_URL`, `MB_LEDGER_USERNAME`, `MB_LEDGER_PASSWORD`, `MB_LEDGER_INITIALIZE_SCHEMA`.
 - Mantém `AssetBalance` por conta/ativo com buckets `available` e `locked`.
 - `credit` aumenta saldo disponível.
 - `reserve` move saldo disponível para bloqueado.
@@ -109,7 +109,6 @@ Manter commits pequenos e temáticos. Exemplos existentes:
   - definir política de retry, DLQ e compensação
   - verificar consistência entre book recuperado e saldos `locked`
 - matching mais completo:
-  - prevenção de self-trade
   - avaliar suporte a market, IOC, FOK e post-only
   - melhorar controle de status parcial/final
   - garantir execução determinística por instrumento/partição

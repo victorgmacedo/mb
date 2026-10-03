@@ -1,76 +1,121 @@
-# MB CLOB
+# CLOB — livro de ofertas e matching
 
-Projeto modular em Java 27 para um Central Limit Order Book simplificado, separado em módulos que podem evoluir para deploy e escala independentes: gateway, engine, ledger e command log.
+Implementação modular em Java 25 de um CLOB simplificado para ordens limitadas. Cobre inserção, cancelamento, matching e transferência de ativos, além de crédito, débito e consultas de saldo e book por HTTP.
 
-## Requisitos
+O projeto usa biblioteca padrão para HTTP, concorrência e JDBC. Kafka mantém os logs; PostgreSQL persiste saldos, idempotência e checkpoints; Protobuf codifica snapshots. Não usa Spring, JPA ou Hibernate.
 
-- Java 27 instalado com SDKMAN.
-- Gradle wrapper configurado para Gradle 9.8.0.
-- Se Java 27 não estiver instalado localmente, o Gradle pode provisionar via Foojay toolchain resolver.
+## Compilar e testar
 
-```bash
-sdk install java 27.0.0-amzn
-sdk use java 27.0.0-amzn
-rtk ./gradlew test
-```
-
-O projeto já contém gateway FIX, adapters Kafka, engine com book em memória/matching básico, funding com idempotência persistida, reserva pré-matching no ledger PostgreSQL, journal Kafka de liquidação, consumer assíncrono de liquidação no ledger e recovery por snapshots Protobuf no PostgreSQL seguido de replay incremental do `book-journal`.
-
-## Módulos
-
-| Módulo | Responsabilidade |
-|---|---|
-| `shared` | Parsing FIX e pequenos value objects compartilhados. |
-| `command-log` | Portas e adapters Kafka para comandos/eventos. |
-| `engine` | Intake de ordens FIX, reserva de saldo, book em memória, matching, eventos de execução e journal de liquidação. |
-| `ledger` | Contas, saldos `available/locked`, funding, reserva, liberação e consumo assíncrono de liquidação persistidos em PostgreSQL via Spring Data JPA. |
-| `gateway` | Entrada HTTP que recebe FIX textual e publica no Kafka. |
-
-## Verificação
+Pré-requisitos: JDK 25, Docker com Compose e, para a demonstração automatizada, Python 3. O Gradle Wrapper está versionado; a toolchain também pode ser provisionada pelo resolver Foojay.
 
 ```bash
-rtk ./gradlew test
+./gradlew clean test
+docker compose up -d
 ```
 
-A verificação local requer Java 27. O wrapper versionado usa Gradle 9.8.0.
-
-Para um passo a passo completo de execução local, testes manuais, inspeção de Kafka/PostgreSQL e troubleshooting, veja [docs/RUNBOOK.md](docs/RUNBOOK.md).
-
-Para logging estruturado e preparação para exportação OpenTelemetry/OTLP, veja [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
-
-Para snapshots periódicos, configuração e recovery, veja [docs/BOOK-SNAPSHOTS.md](docs/BOOK-SNAPSHOTS.md).
-
-## Local Kafka
+Os testes de integração PostgreSQL usam schemas temporários próprios:
 
 ```bash
-rtk docker compose up -d
-rtk ./gradlew :ledger:runLedgerSettlements
-rtk ./gradlew :engine:runEngine
-rtk ./gradlew :gateway:runGateway
+MB_LEDGER_TEST_JDBC_URL=jdbc:postgresql://localhost:5432/mb \
+MB_SNAPSHOT_TEST_JDBC_URL=jdbc:postgresql://localhost:5432/mb \
+./gradlew test --rerun-tasks
 ```
 
-O `docker-compose` sobe Kafka e PostgreSQL. O ledger usa por padrão:
+## Verificar todas as operações
 
-```text
-MB_LEDGER_JDBC_URL=jdbc:postgresql://localhost:5432/mb
-MB_LEDGER_USERNAME=mb
-MB_LEDGER_PASSWORD=mb
-```
-
-Publicar funding e depois uma ordem pelo gateway:
+Com Kafka e PostgreSQL saudáveis, execute:
 
 ```bash
-curl -i -X POST 'http://localhost:8080/commands' \
-  -H 'Content-Type: text/plain' \
-  --data-binary '8=FIX.4.4|35=U1|49=gateway|56=engine|1=account-A|11=funding-1|55=BRL|38=5000000000000000|'
-
-curl -i -X POST 'http://localhost:8080/commands' \
-  -H 'Content-Type: text/plain' \
-  --data-binary '8=FIX.4.4|35=D|49=gateway|56=engine|1=account-A|11=order-1|55=BTC/BRL|54=1|44=50000000|38=100000000|'
+python3 scripts/verify-exercise.py
 ```
 
-Para facilitar testes locais, o gateway aceita `|` como delimitador e normaliza para SOH antes de publicar no Kafka.
+O script cria tópicos e schema exclusivos, inicia os serviços em portas disponíveis, verifica crédito/débito idempotentes, o exemplo de 1 BTC por 500 mil BRL, saldo reservado, matching parcial, preço do maker, cancelamento, rejeições e recovery de snapshot. Remove seus serviços e dados ao terminar. Os logs ficam em `build/verify_*`.
 
-O engine consome `commands`, restaura snapshots e replaya o trecho posterior do `book-journal` no startup, converte FIX inbound em comandos tipados, credita funding `35=U1` de forma idempotente pelo `ClOrdID(11)`, valida instrumentos conhecidos e preço/quantidade positivos, reserva saldo no ledger, mantém um order book em memória por instrumento, executa matching básico com prioridade preço-tempo, persiste mutações aceitas do book no `book-journal`, publica instruções de liquidação FIX-like no tópico `settlements`, aceita cancelamentos de ordens abertas, libera reserva no cancelamento e publica ExecutionReports FIX em `events`.
+## Executar os serviços manualmente
 
-O ledger persiste saldos disponíveis/bloqueados em PostgreSQL. Funding, reserva pré-matching e cancelamento já estão conectados ao engine; o consumidor `runLedgerSettlements` aplica `U2/U3` do tópico `settlements` idempotentemente.
+Após `docker compose up -d`, use um terminal para cada processo:
+
+```bash
+./gradlew :ledger:runLedgerSettlements
+./gradlew :engine:runEngine
+./gradlew :gateway:runGateway
+```
+
+O gateway escuta em `http://localhost:8080`. O engine serve a visão interna do book em `127.0.0.1:8081`. Snapshots periódicos são opcionais:
+
+```bash
+./gradlew :engine:runBookSnapshots
+# Ou apenas um checkpoint:
+./gradlew :engine:runBookSnapshots --args=--once
+```
+
+## Operações HTTP
+
+`POST /commands` recebe FIX textual, aceitando `|` ou SOH como delimitador. HTTP 202 confirma que o comando foi publicado no Kafka; o engine responde em `events` com `35=8` para sucesso ou `35=j` para rejeição. A liquidação de trades é assíncrona: consulte até observar o resultado esperado.
+
+Use identificadores novos para ordens e cancelamentos. Crédito e débito são idempotentes por tipo e `ClOrdID(11)`; reutilizar o identificador com payload diferente é rejeitado.
+
+```bash
+# Crédito: comprador A recebe BRL; vendedor B recebe BTC.
+curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
+  --data '8=FIX.4.4|35=U1|49=gateway|1=A|11=fund-A|55=BRL|38=600000|'
+curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
+  --data '8=FIX.4.4|35=U1|49=gateway|1=B|11=fund-B|55=BTC|38=1|'
+
+# Venda limitada e compra: 1 BTC por 500 mil BRL.
+curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
+  --data '8=FIX.4.4|35=D|49=gateway|1=B|11=sell-1|55=BTC/BRL|54=2|44=500000|38=1|'
+curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
+  --data '8=FIX.4.4|35=D|49=gateway|1=A|11=buy-1|55=BTC/BRL|54=1|44=500000|38=1|'
+
+# Débito do saldo disponível; nunca utiliza saldo bloqueado.
+curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
+  --data '8=FIX.4.4|35=U6|49=gateway|1=A|11=debit-A|55=BRL|38=50000|'
+
+# Ordem sem cruzamento e cancelamento pela mesma conta.
+curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
+  --data '8=FIX.4.4|35=D|49=gateway|1=A|11=resting-A|55=BTC/BRL|54=1|44=100|38=1|'
+curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
+  --data '8=FIX.4.4|35=F|49=gateway|1=A|11=cancel-A|55=BTC/BRL|41=resting-A|'
+
+# Consultas: disponível, bloqueado, total e níveis/ordens do book.
+curl 'http://localhost:8080/accounts/A/balances?asset=BRL'
+curl 'http://localhost:8080/accounts/A/balances?asset=BTC'
+curl 'http://localhost:8080/books?instrument=BTC%2FBRL'
+```
+
+Após essas operações e a liquidação, A tem 1 BTC e 50000 BRL disponíveis; B tem 500000 BRL e nenhum BTC. O book fica vazio e não restam reservas.
+
+Saldo de conta/ativo sem registro retorna zero. Instrumento conhecido sem ordens retorna listas vazias; desconhecido retorna 404. Consultas malformadas retornam 400, métodos incompatíveis 405 e indisponibilidade de dependências 503.
+
+## Docker e executáveis nativos
+
+Há uma imagem nativa por processo: gateway, engine, settlements e snapshots. `shared` e `command-log` são bibliotecas incluídas nos executáveis. As imagens finais não incluem JVM.
+
+```bash
+docker build --target gateway -t mb-gateway:native .
+docker build --target engine -t mb-engine:native .
+docker build --target settlements -t mb-settlements:native .
+docker build --target snapshots -t mb-snapshots:native .
+docker compose -f docker-compose.yml -f compose.native.yml up -d
+```
+
+Para verificar os executáveis nativos com os mesmos cenários e dados isolados:
+
+```bash
+python3 scripts/verify-exercise.py --mode native
+```
+
+Build e configuração em [docs/NATIVE.md](docs/NATIVE.md).
+
+## Decisões e limites
+
+- Instrumentos: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`; apenas ordens limitadas.
+- Preço e quantidade usam `long` positivo, sem ponto flutuante. Os exemplos usam unidades inteiras de BTC e BRL. Não existe escala decimal implícita; uma integração fracionária precisa definir unidades e escala explicitamente.
+- Matching usa prioridade preço-tempo e preço do maker. A quantidade executada sai de ambas as ordens; a parte restante pode descansar no book.
+- Compras reservam preço-limite × quantidade na cotação; vendas reservam quantidade no ativo base. Cancelamentos liberam o restante e compras com melhoria de preço recebem a diferença.
+- Uma ordem que alcançaria contraparte da mesma conta é rejeitada integralmente antes de reservar saldo ou executar trades.
+- O ambiente demonstrativo usa uma partição e um engine ativo. Replicação e fencing não estão implementados.
+- As transações JDBC garantem atomicidade no ledger. Book, Kafka e ledger não formam uma transação distribuída; reconciliação de falhas entre esses componentes continua sendo evolução de produção.
+
+Arquitetura em [docs/DESIGN.md](docs/DESIGN.md), operação em [docs/RUNBOOK.md](docs/RUNBOOK.md), checkpoints em [docs/BOOK-SNAPSHOTS.md](docs/BOOK-SNAPSHOTS.md) e responsabilidades de todas as classes de produção em [docs/CLASS-FLOWS.md](docs/CLASS-FLOWS.md). Documentos em `docs/superpowers` registram decisões históricas; não substituem estas instruções atuais.
