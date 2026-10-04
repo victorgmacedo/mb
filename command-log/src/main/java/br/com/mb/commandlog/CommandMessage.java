@@ -2,7 +2,11 @@ package br.com.mb.commandlog;
 
 import java.util.Objects;
 
-public record CommandMessage(String topic, String key, String value) {
+public record CommandMessage(String topic, String key, String value, int partition, long offset) {
+
+    public CommandMessage(String topic, String key, String value) {
+        this(topic, key, value, -1, -1);
+    }
 
     public CommandMessage {
         Objects.requireNonNull(topic, "topic must not be null");
