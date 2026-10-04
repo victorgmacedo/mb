@@ -2,12 +2,13 @@ package br.com.mb.engine.durable;
 
 import br.com.mb.commandlog.CommandPublisher;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /** Publication is retried independently of command intake and can run on any engine pod. */
 public final class OutboxDispatcher implements AutoCloseable {
-    private final java.util.concurrent.ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
     private final DurableEngineStore store;
     private final CommandPublisher publisher;
     private final Consumer<RuntimeException> onFailure;

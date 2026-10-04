@@ -22,11 +22,6 @@ public final class StructuredLogger {
         addKeyValues(builder, keyValues).log(event);
     }
 
-    public void warn(String event, Object... keyValues) {
-        var builder = logger.atWarn().addKeyValue("event", event);
-        addKeyValues(builder, keyValues).log(event);
-    }
-
     public void error(String event, Throwable exception, Object... keyValues) {
         var builder = logger.atError().setCause(exception).addKeyValue("event", event);
         addKeyValues(builder, keyValues).log(event);

@@ -15,6 +15,7 @@ import br.com.mb.ledger.domain.LedgerException;
 import br.com.mb.ledger.jooq.JooqDatabase;
 import br.com.mb.ledger.jooq.JooqLedger;
 import br.com.mb.ledger.settlement.LedgerSettlementHandler;
+import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.model.Asset;
 import java.util.ArrayList;
 import java.util.List;
@@ -196,7 +197,7 @@ class DurableEngineStoreTest {
     }
 
     private static CommandMessage message(int partition, long offset, String fix) {
-        return new CommandMessage("commands", br.com.mb.shared.fix.FixMessage.parse(fix).kafkaKey(), fix, partition, offset);
+        return new CommandMessage("commands", FixMessage.parse(fix).kafkaKey(), fix, partition, offset);
     }
 
     private static CommandPublisher collector(List<CommandMessage> outputs) {

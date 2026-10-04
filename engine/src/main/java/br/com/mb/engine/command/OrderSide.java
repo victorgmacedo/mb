@@ -20,8 +20,4 @@ public enum OrderSide {
         }
         throw new InvalidFixMessageException("Unsupported FIX Side(54): " + fixValue);
     }
-
-    public String fixValue() {
-        return fixValue;
-    }
 }

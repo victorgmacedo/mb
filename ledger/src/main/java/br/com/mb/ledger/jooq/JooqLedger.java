@@ -5,13 +5,14 @@ import static br.com.mb.ledger.jooq.LedgerTables.AMOUNT;
 import static br.com.mb.ledger.jooq.LedgerTables.ASSET;
 import static br.com.mb.ledger.jooq.LedgerTables.AVAILABLE;
 import static br.com.mb.ledger.jooq.LedgerTables.BALANCES;
-import static br.com.mb.ledger.jooq.LedgerTables.COMMAND_ID;
 import static br.com.mb.ledger.jooq.LedgerTables.COMMANDS;
+import static br.com.mb.ledger.jooq.LedgerTables.COMMAND_ID;
 import static br.com.mb.ledger.jooq.LedgerTables.HASH;
 import static br.com.mb.ledger.jooq.LedgerTables.LOCKED;
 import static br.com.mb.ledger.jooq.LedgerTables.TYPE;
 import static br.com.mb.ledger.jooq.LedgerTables.VERSION;
 
+import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.AssetBalance;
 import br.com.mb.ledger.domain.Ledger;
@@ -89,7 +90,7 @@ public final class JooqLedger implements Ledger {
         if (failure != null) throw new LedgerException(failure);
     }
 
-    public void quarantineSettlement(br.com.mb.commandlog.CommandMessage message, String reason) {
+    public void quarantineSettlement(CommandMessage message, String reason) {
         transaction(db -> {
             db.execute("INSERT INTO invalid_settlements(id,topic,partition_id,source_offset,payload,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                 sha256(message.topic() + "|" + message.partition() + "|" + message.offset() + "|" + message.value()),

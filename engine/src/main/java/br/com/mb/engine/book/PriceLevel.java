@@ -8,7 +8,6 @@ final class PriceLevel {
     private final long price;
     private BookOrder head;
     private BookOrder tail;
-    private long totalQuantity;
 
     PriceLevel(long price) {
         this.price = price;
@@ -23,7 +22,6 @@ final class PriceLevel {
             order.previous = tail;
             tail = order;
         }
-        totalQuantity += order.remainingQuantity();
     }
 
     void remove(BookOrder order) {
@@ -39,7 +37,6 @@ final class PriceLevel {
             tail = order.previous;
         }
 
-        totalQuantity -= order.remainingQuantity();
         order.previous = null;
         order.next = null;
     }
@@ -54,10 +51,6 @@ final class PriceLevel {
 
     long price() {
         return price;
-    }
-
-    long totalQuantity() {
-        return totalQuantity;
     }
 
     List<BookOrder> orders() {

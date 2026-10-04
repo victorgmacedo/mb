@@ -3,19 +3,20 @@ package br.com.mb.engine;
 import br.com.mb.commandlog.kafka.KafkaCommandConsumer;
 import br.com.mb.commandlog.kafka.KafkaCommandPublisher;
 import br.com.mb.commandlog.kafka.KafkaTopicReplayer;
-import br.com.mb.engine.durable.DurableEngineStore;
-import br.com.mb.engine.durable.OutboxDispatcher;
 import br.com.mb.engine.config.EngineConfig;
 import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.InstrumentCatalog;
-import br.com.mb.engine.journal.BookJournalReplayer;
+import br.com.mb.engine.durable.DurableEngineStore;
+import br.com.mb.engine.durable.OutboxDispatcher;
 import br.com.mb.engine.http.BookQueryServer;
 import br.com.mb.engine.http.BookViews;
+import br.com.mb.engine.journal.BookJournalReplayer;
 import br.com.mb.ledger.jooq.PostgresLedgerFactory;
 import br.com.mb.shared.logging.LoggingConfig;
 import br.com.mb.shared.logging.StructuredLogger;
 import br.com.mb.shared.logging.TelemetryContext;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -51,8 +52,8 @@ public final class EngineApplication {
         var stopped = new CountDownLatch(1);
         try (var consumer = KafkaCommandConsumer.connect(config.bootstrapServers(), config.consumerGroupId(),
                  config.commandsTopic(), new KafkaCommandConsumer.PartitionListener() {
-                     public void assigned(java.util.List<Integer> partitions) { durable.assigned(partitions); }
-                     public void revoked(java.util.List<Integer> partitions) { durable.revoked(partitions); }
+                     public void assigned(List<Integer> partitions) { durable.assigned(partitions); }
+                     public void revoked(List<Integer> partitions) { durable.revoked(partitions); }
                  });
              var publisher = KafkaCommandPublisher.connect(config.bootstrapServers(), "mb-engine-outbox");
              var queryServer = new BookQueryServer(environment.getOrDefault("ENGINE_BOOK_HOST", "127.0.0.1"),
