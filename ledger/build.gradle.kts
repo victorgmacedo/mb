@@ -26,13 +26,14 @@ tasks.register<JavaExec>("runLedgerReconciliation") {
 
 // Native builds are optional; ordinary JVM tests do not require GraalVM.
 graalvmNative {
+    useArgFile.set(true)
     toolchainDetection.set(false)
     metadataRepository { enabled.set(true) }
     binaries {
         named("main") {
             mainClass.set("br.com.mb.ledger.LedgerSettlementApplication")
             imageName.set("mb-settlements")
-            jvmArgs.add("-Xmx2300m")
+            jvmArgs.add("-Xmx3000m")
             buildArgs.addAll("--no-fallback", "--gc=serial", "-Os", "--parallelism=2")
         }
     }

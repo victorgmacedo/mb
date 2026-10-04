@@ -35,20 +35,21 @@ tasks.register<JavaExec>("runBookSnapshots") {
 
 // Native builds are optional; ordinary JVM tests do not require GraalVM.
 graalvmNative {
+    useArgFile.set(true)
     toolchainDetection.set(false)
     metadataRepository { enabled.set(true) }
     binaries {
         named("main") {
             mainClass.set("br.com.mb.engine.EngineApplication")
             imageName.set("mb-engine")
-            jvmArgs.add("-Xmx2300m")
+            jvmArgs.add("-Xmx3000m")
             buildArgs.addAll("--no-fallback", "--gc=serial", "-Os", "--parallelism=2")
         }
         create("snapshots") {
             mainClass.set("br.com.mb.engine.BookSnapshotsApplication")
             imageName.set("mb-snapshots")
             classpath.from(sourceSets.main.get().runtimeClasspath)
-            jvmArgs.add("-Xmx2300m")
+            jvmArgs.add("-Xmx3000m")
             buildArgs.addAll("--no-fallback", "--gc=serial", "-Os", "--parallelism=2")
         }
     }

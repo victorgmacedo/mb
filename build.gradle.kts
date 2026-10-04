@@ -43,6 +43,7 @@ subprojects {
     tasks.register("writeRuntimeClasspath") {
         dependsOn("classes")
         val output = layout.buildDirectory.file("runtime-classpath.txt")
+        inputs.files(sourceSets.main.get().runtimeClasspath)
         outputs.file(output)
         doLast {
             output.get().asFile.writeText(sourceSets.main.get().runtimeClasspath.asPath)
