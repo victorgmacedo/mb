@@ -3,6 +3,7 @@ package br.com.mb.engine.book;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.NavigableMap;
@@ -48,25 +49,25 @@ final class BookSide {
         return Optional.of(levels.firstEntry().getValue());
     }
 
-    void validateSelfTrade(Order order) {
+    List<Trade> previewTrades(Order order) {
         var remaining = order.quantity();
+        var trades = new ArrayList<Trade>();
         for (var level : levels.values()) {
-            var crosses = order.side() == Side.BUY
-                ? order.price() >= level.price()
-                : order.price() <= level.price();
-            if (!crosses) {
-                return;
-            }
+            var crosses = order.side() == Side.BUY ? order.price() >= level.price() : order.price() <= level.price();
+            if (!crosses) break;
             for (var maker = level.head(); maker != null; maker = maker.next) {
                 if (order.accountId().equals(maker.accountId())) {
                     throw new InvalidOrderException("self-trade prevented: " + maker.clientOrderId().value());
                 }
-                remaining -= Math.min(remaining, maker.remainingQuantity());
-                if (remaining == 0) {
-                    return;
-                }
+                var quantity = Math.min(remaining, maker.remainingQuantity());
+                remaining -= quantity;
+                trades.add(new Trade(maker.accountId(), maker.clientOrderId(), maker.side(),
+                    order.accountId(), order.clientOrderId(), maker.price(), quantity,
+                    maker.remainingQuantity() - quantity, remaining));
+                if (remaining == 0) return trades;
             }
         }
+        return trades;
     }
 
     List<BookOrder> openOrders() {

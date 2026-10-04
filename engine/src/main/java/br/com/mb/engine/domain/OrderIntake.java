@@ -28,8 +28,7 @@ public final class OrderIntake {
             instrument,
             Side.fromCommandSide(command.side()),
             command.price(),
-            command.quantity(),
-            OrderStatus.ACCEPTED
+            command.quantity()
         );
     }
 }

@@ -6,8 +6,7 @@ public record Order(
     Instrument instrument,
     Side side,
     long price,
-    long quantity,
-    OrderStatus status
+    long quantity
 ) {
 
     public Order {

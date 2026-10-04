@@ -17,7 +17,7 @@ public final class FundingCreditStrategy implements EngineCommandStrategy<Fundin
 
     @Override
     public List<String> execute(FundingCreditCommand command) {
-        ledger.creditFunding(command.clientOrderId(), new AccountId(command.accountId()),
+        ledger.credit(new AccountId(command.accountId()),
             new Asset(command.asset()), command.amount());
         return events.accepted(command);
     }

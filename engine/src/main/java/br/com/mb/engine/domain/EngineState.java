@@ -4,6 +4,7 @@ import br.com.mb.engine.book.BookOrder;
 import br.com.mb.engine.book.BookOrderView;
 import br.com.mb.engine.book.OrderBook;
 import br.com.mb.engine.book.PlacementResult;
+import br.com.mb.engine.book.PlacementPlan;
 import br.com.mb.engine.command.CancelOrderCommand;
 import java.time.Instant;
 import java.util.Comparator;
@@ -19,18 +20,21 @@ public final class EngineState {
     private long nextEntrySequence = 1;
 
     public PlacementResult place(Order order) {
-        return place(order, nextEntrySequence(), Instant.now());
+        return apply(plan(order));
     }
 
-    public PlacementResult place(Order order, long entrySequence, Instant enteredAt) {
-        book(order.instrument()).validateSelfTrade(order);
-        return replayAccepted(order, entrySequence, enteredAt);
+    public PlacementPlan plan(Order order) {
+        if (hasOpenOrder(order.clientOrderId())) {
+            throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
+        }
+        if (nextEntrySequence == Long.MAX_VALUE) throw new InvalidOrderException("order sequence exhausted");
+        return book(order.instrument()).plan(order, nextEntrySequence, Instant.now());
     }
 
-    public PlacementResult replayAccepted(Order order, long entrySequence, Instant enteredAt) {
-        var book = books.computeIfAbsent(order.instrument(), OrderBook::new);
-        var result = book.replayAccepted(order, entrySequence, enteredAt);
-        advanceEntrySequencePast(entrySequence);
+    public PlacementResult apply(PlacementPlan plan) {
+        var book = book(plan.order().instrument());
+        var result = book.apply(plan);
+        nextEntrySequence++;
         result.trades().stream()
             .filter(trade -> trade.makerLeavesQuantity() == 0)
             .forEach(trade -> orderLocations.remove(trade.makerClientOrderId()));
@@ -74,28 +78,4 @@ public final class EngineState {
             .toList();
     }
 
-    public long nextEntrySequence() {
-        return nextEntrySequence++;
-    }
-
-    public long lastEntrySequence() {
-        return nextEntrySequence - 1;
-    }
-
-    public List<OrderBook> books() {
-        return books.values().stream().sorted(Comparator.comparing(book -> book.instrument().symbol())).toList();
-    }
-
-    public void restoreEntrySequence(long lastEntrySequence) {
-        if (lastEntrySequence < 0 || lastEntrySequence == Long.MAX_VALUE) {
-            throw new IllegalArgumentException("Invalid last entry sequence");
-        }
-        advanceEntrySequencePast(lastEntrySequence);
-    }
-
-    private void advanceEntrySequencePast(long entrySequence) {
-        if (entrySequence >= nextEntrySequence) {
-            nextEntrySequence = entrySequence + 1;
-        }
-    }
 }

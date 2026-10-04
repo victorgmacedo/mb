@@ -2,7 +2,6 @@ package br.com.mb.gateway.http;
 
 import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.gateway.config.GatewayConfig;
-import br.com.mb.ledger.domain.Ledger;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -18,13 +17,11 @@ public final class GatewayHttpServer {
     private final GatewayConfig config;
     private final CommandPublisher publisher;
     private HttpServer server;
-    private final Ledger ledger;
     private final URI engineUrl;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
     private ExecutorService executor;
 
-    public GatewayHttpServer(GatewayConfig config, CommandPublisher publisher, Ledger ledger, URI engineUrl) {
-        this.ledger = Objects.requireNonNull(ledger);
+    public GatewayHttpServer(GatewayConfig config, CommandPublisher publisher, URI engineUrl) {
         this.engineUrl = Objects.requireNonNull(engineUrl);
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.publisher = Objects.requireNonNull(publisher, "publisher must not be null");
@@ -34,7 +31,7 @@ public final class GatewayHttpServer {
         try {
             server = HttpServer.create(new InetSocketAddress(config.host(), config.port()), 0);
             server.createContext("/commands", new PublishCommandHandler(config.commandsTopic(), publisher));
-            var queries = new QueryHandler(ledger, engineUrl, client);
+            var queries = new QueryHandler(engineUrl, client);
             server.createContext("/accounts/", queries);
             server.createContext("/books", queries);
             executor = Executors.newVirtualThreadPerTaskExecutor();

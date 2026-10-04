@@ -28,7 +28,6 @@ class OrderIntakeTest {
         assertEquals(Side.BUY, order.side());
         assertEquals(50_000_000L, order.price());
         assertEquals(100_000_000L, order.quantity());
-        assertEquals(OrderStatus.ACCEPTED, order.status());
     }
 
     @Test

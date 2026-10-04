@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -15,20 +14,6 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.junit.jupiter.api.Test;
 
 class KafkaCommandConsumerTest {
-
-    @Test
-    void notifiesOwnershipChangesBeforeProcessingNewPartitions() {
-        var mock = new MockConsumer<String, String>("earliest");
-        var notifications = new ArrayList<String>();
-        try (var consumer = new KafkaCommandConsumer(mock, "commands", new KafkaCommandConsumer.PartitionListener() {
-            public void assigned(List<Integer> partitions) { notifications.add("assigned:" + partitions); }
-            public void revoked(List<Integer> partitions) { notifications.add("revoked:" + partitions); }
-        })) {
-            mock.rebalance(List.of(new TopicPartition("commands", 0)));
-            mock.rebalance(List.of(new TopicPartition("commands", 1)));
-            assertEquals(List.of("assigned:[0]", "revoked:[0]", "assigned:[1]"), notifications);
-        }
-    }
 
     @Test
     void finishesHandledBatchBeforeShutdownAndClosesOnCallerThread() {

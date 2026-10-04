@@ -32,10 +32,6 @@ public final class BookOrder {
         this.remainingQuantity = order.quantity();
     }
 
-    public static BookOrder from(Order order) {
-        return new BookOrder(order, 0, Instant.EPOCH);
-    }
-
     public static BookOrder from(Order order, long entrySequence, Instant enteredAt) {
         return new BookOrder(order, entrySequence, enteredAt);
     }

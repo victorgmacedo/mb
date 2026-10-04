@@ -17,7 +17,7 @@ public final class FundingDebitStrategy implements EngineCommandStrategy<Funding
 
     @Override
     public List<String> execute(FundingDebitCommand command) {
-        ledger.debitFunding(command.clientOrderId(), new AccountId(command.accountId()),
+        ledger.debitAvailable(new AccountId(command.accountId()),
             new Asset(command.asset()), command.amount());
         return events.accepted(command);
     }

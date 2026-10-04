@@ -1,111 +1,59 @@
 package br.com.mb.engine.ledger;
 
 import br.com.mb.engine.book.BookOrder;
-import br.com.mb.engine.book.PlacementResult;
-import br.com.mb.engine.book.Trade;
-import br.com.mb.engine.domain.Instrument;
+import br.com.mb.engine.book.PlacementPlan;
 import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.domain.InvalidOrderException;
-import br.com.mb.engine.domain.ListedInstrument;
-import br.com.mb.engine.domain.Order;
 import br.com.mb.engine.domain.Side;
 import br.com.mb.ledger.domain.AccountId;
+import br.com.mb.ledger.domain.BalanceChange;
 import br.com.mb.ledger.domain.Ledger;
-import br.com.mb.ledger.domain.LedgerException;
-import br.com.mb.ledger.domain.SettlementSide;
-import br.com.mb.ledger.domain.TradeSettlementInstruction;
-import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class BalanceReservations {
-
-    private final InstrumentCatalog instrumentCatalog;
+    private final InstrumentCatalog instruments;
     private final Ledger ledger;
 
-    public BalanceReservations(InstrumentCatalog instrumentCatalog, Ledger ledger) {
-        this.instrumentCatalog = Objects.requireNonNull(instrumentCatalog, "instrumentCatalog must not be null");
-        this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
+    public BalanceReservations(InstrumentCatalog instruments, Ledger ledger) {
+        this.instruments = instruments;
+        this.ledger = ledger;
     }
 
-    public void reserve(Order order) {
-        Objects.requireNonNull(order, "order must not be null");
-        var listing = listing(order.instrument());
-        try {
-            switch (order.side()) {
-                case BUY -> ledger.reserve(account(order.accountId().value()), listing.quoteAsset(), notional(order.price(), order.quantity()));
-                case SELL -> ledger.reserve(account(order.accountId().value()), listing.baseAsset(), order.quantity());
+    public void settle(PlacementPlan plan) {
+        var order = plan.order();
+        var listing = instruments.findListing(order.instrument()).orElseThrow();
+        var changes = new ArrayList<BalanceChange>();
+        var reservedAsset = order.side() == Side.BUY ? listing.quoteAsset() : listing.baseAsset();
+        var reservedAmount = order.side() == Side.BUY ? notional(order.price(), order.quantity()) : order.quantity();
+        var taker = new AccountId(order.accountId().value());
+        changes.add(new BalanceChange(taker, reservedAsset, -reservedAmount, reservedAmount));
+        for (var trade : plan.trades()) {
+            var maker = new AccountId(trade.makerAccountId().value());
+            var seller = trade.makerSide() == Side.SELL ? maker : taker;
+            var buyer = trade.makerSide() == Side.SELL ? taker : maker;
+            var quote = notional(trade.price(), trade.quantity());
+            changes.add(new BalanceChange(seller, listing.baseAsset(), 0, -trade.quantity()));
+            changes.add(new BalanceChange(buyer, listing.quoteAsset(), 0, -quote));
+            changes.add(new BalanceChange(buyer, listing.baseAsset(), trade.quantity(), 0));
+            changes.add(new BalanceChange(seller, listing.quoteAsset(), quote, 0));
+            if (order.side() == Side.BUY && order.price() > trade.price()) {
+                var improvement = notional(order.price() - trade.price(), trade.quantity());
+                changes.add(new BalanceChange(taker, listing.quoteAsset(), improvement, -improvement));
             }
-        } catch (LedgerException exception) {
-            throw new InvalidOrderException(exception.getMessage());
         }
+        ledger.apply(changes);
     }
 
     public void release(BookOrder order) {
-        Objects.requireNonNull(order, "order must not be null");
-        var listing = listing(order.instrument());
-        try {
-            switch (order.side()) {
-                case BUY -> ledger.release(account(order.accountId().value()), listing.quoteAsset(), notional(order.price(), order.remainingQuantity()));
-                case SELL -> ledger.release(account(order.accountId().value()), listing.baseAsset(), order.remainingQuantity());
-            }
-        } catch (LedgerException exception) {
-            throw new InvalidOrderException(exception.getMessage());
-        }
-    }
-
-    public void settle(Order takerOrder, PlacementResult placement) {
-        Objects.requireNonNull(takerOrder, "takerOrder must not be null");
-        Objects.requireNonNull(placement, "placement must not be null");
-        var listing = listing(takerOrder.instrument());
-        try {
-            for (var trade : placement.trades()) {
-                ledger.settle(new TradeSettlementInstruction(
-                    account(trade.makerAccountId().value()),
-                    account(trade.takerAccountId().value()),
-                    settlementSide(trade.makerSide()),
-                    listing.baseAsset(),
-                    listing.quoteAsset(),
-                    trade.price(),
-                    trade.quantity()
-                ));
-                releaseTakerPriceImprovement(takerOrder, listing, trade);
-            }
-        } catch (LedgerException exception) {
-            throw new InvalidOrderException(exception.getMessage());
-        }
-    }
-
-    private ListedInstrument listing(Instrument instrument) {
-        return instrumentCatalog.findListing(instrument)
-            .orElseThrow(() -> new InvalidOrderException("unknown instrument: " + instrument.symbol()));
-    }
-
-    private static AccountId account(String accountId) {
-        return new AccountId(accountId);
-    }
-
-    private void releaseTakerPriceImprovement(Order takerOrder, ListedInstrument listing, Trade trade) {
-        if (takerOrder.side() != Side.BUY || takerOrder.price() == trade.price()) {
-            return;
-        }
-        ledger.release(
-            account(takerOrder.accountId().value()),
-            listing.quoteAsset(),
-            notional(takerOrder.price() - trade.price(), trade.quantity())
-        );
-    }
-
-    private static SettlementSide settlementSide(Side side) {
-        return switch (side) {
-            case BUY -> SettlementSide.BUY;
-            case SELL -> SettlementSide.SELL;
-        };
+        var listing = instruments.findListing(order.instrument()).orElseThrow();
+        var asset = order.side() == Side.BUY ? listing.quoteAsset() : listing.baseAsset();
+        var amount = order.side() == Side.BUY ? notional(order.price(), order.remainingQuantity()) : order.remainingQuantity();
+        ledger.apply(List.of(new BalanceChange(new AccountId(order.accountId().value()), asset, amount, -amount)));
     }
 
     private static long notional(long price, long quantity) {
-        try {
-            return Math.multiplyExact(price, quantity);
-        } catch (ArithmeticException exception) {
-            throw new InvalidOrderException("reserve amount overflow");
-        }
+        try { return Math.multiplyExact(price, quantity); }
+        catch (ArithmeticException exception) { throw new InvalidOrderException("reserve amount overflow"); }
     }
 }

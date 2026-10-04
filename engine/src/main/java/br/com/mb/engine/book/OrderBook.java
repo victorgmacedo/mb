@@ -16,20 +16,12 @@ import java.util.Optional;
 public final class OrderBook {
 
     private final Instrument instrument;
-    private long lastJournalSequence;
     private final BookSide bids = BookSide.bids();
     private final BookSide asks = BookSide.asks();
     private final Map<ClientOrderId, BookOrder> ordersByClientOrderId = new HashMap<>();
 
     public OrderBook(Instrument instrument) {
         this.instrument = instrument;
-    }
-
-    public long lastJournalSequence() { return lastJournalSequence; }
-
-    public void advanceJournalSequence(long sequence) {
-        if (sequence < lastJournalSequence) throw new IllegalArgumentException("Journal sequence regressed");
-        lastJournalSequence = sequence;
     }
 
     public void add(Order order) {
@@ -41,32 +33,37 @@ public final class OrderBook {
     }
 
     public PlacementResult place(Order order, long entrySequence, Instant enteredAt) {
-        validateSelfTrade(order);
-        return replayAccepted(order, entrySequence, enteredAt);
+        return apply(plan(order, entrySequence, enteredAt));
     }
 
-    /** Reconstructs accepted historical mutations without applying current intake policy. */
-    public PlacementResult replayAccepted(Order order, long entrySequence, Instant enteredAt) {
+    public PlacementPlan plan(Order order, long entrySequence, Instant enteredAt) {
         if (!instrument.equals(order.instrument())) {
             throw new InvalidOrderException("order instrument does not match book instrument");
         }
         if (ordersByClientOrderId.containsKey(order.clientOrderId())) {
             throw new InvalidOrderException("duplicate client order id: " + order.clientOrderId().value());
         }
-
-        var taker = BookOrder.from(order, entrySequence, enteredAt);
-        var trades = match(taker);
-        if (!taker.isFilled()) {
-            sideFor(order.side()).add(taker);
-            ordersByClientOrderId.put(order.clientOrderId(), taker);
-            return new PlacementResult(trades, Optional.of(taker));
-        }
-
-        return new PlacementResult(trades, Optional.empty());
+        return new PlacementPlan(order, entrySequence, enteredAt, oppositeSideFor(order.side()).previewTrades(order));
     }
 
-    public void validateSelfTrade(Order order) {
-        oppositeSideFor(order.side()).validateSelfTrade(order);
+    /** Apply immediately after validation/settlement, without another command between plan and apply. */
+    public PlacementResult apply(PlacementPlan plan) {
+        var taker = BookOrder.from(plan.order(), plan.entrySequence(), plan.enteredAt());
+        for (var trade : plan.trades()) {
+            var maker = ordersByClientOrderId.get(trade.makerClientOrderId());
+            maker.fill(trade.quantity());
+            taker.fill(trade.quantity());
+            if (maker.isFilled()) {
+                oppositeSideFor(taker.side()).remove(maker);
+                ordersByClientOrderId.remove(maker.clientOrderId());
+            }
+        }
+        if (!taker.isFilled()) {
+            sideFor(taker.side()).add(taker);
+            ordersByClientOrderId.put(taker.clientOrderId(), taker);
+            return new PlacementResult(plan.trades(), Optional.of(taker));
+        }
+        return new PlacementResult(plan.trades(), Optional.empty());
     }
 
     public BookOrder cancel(ClientOrderId clientOrderId) {
@@ -124,50 +121,10 @@ public final class OrderBook {
         };
     }
 
-    private ArrayList<Trade> match(BookOrder taker) {
-        var trades = new ArrayList<Trade>();
-        var opposite = oppositeSideFor(taker.side());
-        while (!taker.isFilled()) {
-            var bestLevel = opposite.bestLevel();
-            if (bestLevel.isEmpty() || !crosses(taker, bestLevel.get().price())) {
-                break;
-            }
-
-            var maker = bestLevel.get().head();
-            var quantity = Math.min(taker.remainingQuantity(), maker.remainingQuantity());
-            maker.fill(quantity);
-            taker.fill(quantity);
-            trades.add(new Trade(
-                maker.accountId(),
-                maker.clientOrderId(),
-                maker.side(),
-                taker.accountId(),
-                taker.clientOrderId(),
-                maker.price(),
-                quantity,
-                maker.remainingQuantity(),
-                taker.remainingQuantity()
-            ));
-
-            if (maker.isFilled()) {
-                opposite.remove(maker);
-                ordersByClientOrderId.remove(maker.clientOrderId());
-            }
-        }
-        return trades;
-    }
-
     private BookSide oppositeSideFor(Side side) {
         return switch (side) {
             case BUY -> asks;
             case SELL -> bids;
-        };
-    }
-
-    private static boolean crosses(BookOrder taker, long makerPrice) {
-        return switch (taker.side()) {
-            case BUY -> taker.price() >= makerPrice;
-            case SELL -> taker.price() <= makerPrice;
         };
     }
 }

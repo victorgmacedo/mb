@@ -6,11 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.gateway.config.GatewayConfig;
-import br.com.mb.ledger.domain.AssetBalance;
-import br.com.mb.ledger.domain.Ledger;
 import br.com.mb.shared.http.HttpSupport;
 import com.sun.net.httpserver.HttpServer;
-import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,19 +28,16 @@ class GatewayHttpServerTest {
             }
             public void close() { }
         };
-        var ledger = (Ledger) Proxy.newProxyInstance(Ledger.class.getClassLoader(), new Class<?>[] {Ledger.class},
-            (proxy, method, args) -> {
-                if (method.getName().equals("balanceOf")) return new AssetBalance(10, 4);
-                throw new UnsupportedOperationException();
-            });
         var upstream = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         upstream.createContext("/books", exchange -> {
             var known = HttpSupport.parameter(exchange, "instrument").equals("BTC/BRL");
             HttpSupport.respond(exchange, known ? 200 : 404, known ? "{\"bids\":[],\"asks\":[]}" : "{}");
         });
+        upstream.createContext("/accounts/", exchange ->
+            HttpSupport.respond(exchange, 200, "{\"available\":10,\"locked\":4,\"total\":14}"));
         upstream.start();
         var gateway = new GatewayHttpServer(new GatewayConfig("127.0.0.1", 0, "unused", "commands"), publisher,
-            ledger, URI.create("http://127.0.0.1:" + upstream.getAddress().getPort()));
+            URI.create("http://127.0.0.1:" + upstream.getAddress().getPort()));
         gateway.start();
         try (var client = HttpClient.newHttpClient()) {
             var base = "http://127.0.0.1:" + gateway.port();

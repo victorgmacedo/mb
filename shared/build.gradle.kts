@@ -1,3 +1,1 @@
-dependencies {
-    implementation("ch.qos.logback:logback-classic:1.6.5")
-}
+// Shared values, FIX parsing and HTTP helpers use only the JDK.

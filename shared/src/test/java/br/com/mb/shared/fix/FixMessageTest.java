@@ -33,24 +33,6 @@ class FixMessageTest {
     }
 
     @Test
-    void parsesInternalLedgerMessageTypes() {
-        var settlement = FixMessage.parse("8=FIX.4.4|35=U2|49=engine|56=ledger|17=settle-1|");
-        var release = FixMessage.parse("8=FIX.4.4|35=U3|49=engine|56=ledger|17=release-1|");
-
-        assertEquals(FixMessageType.LEDGER_TRADE_SETTLEMENT, settlement.messageType());
-        assertEquals(FixMessageType.LEDGER_RELEASE, release.messageType());
-    }
-
-    @Test
-    void parsesInternalBookJournalMessageTypes() {
-        var accepted = FixMessage.parse("8=FIX.4.4|35=U4|49=engine|56=engine|11=order-1|");
-        var cancelled = FixMessage.parse("8=FIX.4.4|35=U5|49=engine|56=engine|41=order-1|");
-
-        assertEquals(FixMessageType.BOOK_ORDER_ACCEPTED, accepted.messageType());
-        assertEquals(FixMessageType.BOOK_ORDER_CANCELLED, cancelled.messageType());
-    }
-
-    @Test
     void rejectsUnsupportedMessageType() {
         var exception = assertThrows(
             InvalidFixMessageException.class,

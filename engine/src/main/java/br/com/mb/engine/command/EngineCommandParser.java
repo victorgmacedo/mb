@@ -14,7 +14,7 @@ public final class EngineCommandParser {
             case FUNDING_DEBIT -> new FundingDebitCommand(required(message, 1, "Account"),
                 required(message, 11, "ClOrdID"), required(message, 55, "Asset"),
                 parseLong(required(message, 38, "Amount"), "Amount(38)"));
-            case LEDGER_TRADE_SETTLEMENT, LEDGER_RELEASE, BOOK_ORDER_ACCEPTED, BOOK_ORDER_CANCELLED, EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
+            case EXECUTION_REPORT, BUSINESS_MESSAGE_REJECT ->
                 throw new InvalidFixMessageException("Unsupported inbound FIX MsgType(35): " + message.messageType().tagValue());
         };
     }

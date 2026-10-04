@@ -10,7 +10,6 @@ import br.com.mb.engine.domain.ClientOrderId;
 import br.com.mb.engine.domain.Instrument;
 import br.com.mb.engine.domain.InvalidOrderException;
 import br.com.mb.engine.domain.Order;
-import br.com.mb.engine.domain.OrderStatus;
 import br.com.mb.engine.domain.Side;
 import org.junit.jupiter.api.Test;
 
@@ -182,7 +181,7 @@ class OrderBookTest {
             var maker = order("maker", opposite, 100, 10);
             book.add(maker);
             var taker = new Order(maker.accountId(), new ClientOrderId("taker"), BTC_BRL,
-                side, 100, 4, OrderStatus.ACCEPTED);
+                side, 100, 4);
 
             assertThrows(InvalidOrderException.class, () -> book.place(taker));
 
@@ -196,7 +195,7 @@ class OrderBookTest {
         var book = new OrderBook(BTC_BRL);
         book.add(order("external", Side.SELL, 99, 4));
         var own = new Order(new AccountId("buyer-A"), new ClientOrderId("own"), BTC_BRL,
-            Side.SELL, 100, 10, OrderStatus.ACCEPTED);
+            Side.SELL, 100, 10);
         book.add(own);
         var before = book.openOrders();
 
@@ -210,7 +209,7 @@ class OrderBookTest {
         var book = new OrderBook(BTC_BRL);
         book.add(order("external", Side.SELL, 100, 4));
         book.add(new Order(new AccountId("buyer-A"), new ClientOrderId("own"), BTC_BRL,
-            Side.SELL, 100, 10, OrderStatus.ACCEPTED));
+            Side.SELL, 100, 10));
 
         assertTrue(book.place(order("taker", Side.BUY, 100, 4)).fullyFilled());
         assertTrue(book.place(order("non-crossing", Side.BUY, 99, 1)).restingOrder().isPresent());
@@ -224,8 +223,7 @@ class OrderBookTest {
             BTC_BRL,
             side,
             price,
-            quantity,
-            OrderStatus.ACCEPTED
+            quantity
         );
     }
 }
