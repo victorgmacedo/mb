@@ -10,6 +10,8 @@ import signal
 import socket
 import subprocess
 import time
+import threading
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -33,6 +35,7 @@ def free_port():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=["jvm", "native"], default="jvm")
+    parser.add_argument("--measure-memory", action="store_true", help="Sample running services during the exercise flow")
     args = parser.parse_args()
     token = "verify_" + uuid.uuid4().hex[:12]
     logs = ROOT / "build" / token
@@ -44,6 +47,11 @@ def main():
     handles = []
     created_topics = []
     created_schema = False
+    memory_stop = threading.Event()
+    memory_samples = []
+    memory_errors = []
+    memory_thread = None
+    memory_started = None
     gateway_port, engine_port = free_port(), free_port()
     env = os.environ.copy()
     env.update({"MB_LEDGER_JDBC_URL": "jdbc:postgresql://localhost:5432/mb?currentSchema=" + schema,
@@ -115,6 +123,50 @@ def main():
                 processes[role] = subprocess.Popen(command, cwd=ROOT, env=env, stdout=handle,
                                                    stderr=subprocess.STDOUT, start_new_session=True)
 
+    def sample_memory():
+        values = {}
+        if args.mode == "jvm":
+            for role, process in processes.copy().items():
+                result = run("ps", "-o", "rss=", "-p", str(process.pid), check=False)
+                if result.returncode == 0 and result.stdout.strip():
+                    values[role] = int(result.stdout.strip()) / 1024
+        else:
+            names = containers.copy()
+            if names:
+                result = run("docker", "stats", "--no-stream", "--format", "{{json .}}", *names, check=False, timeout=15)
+                for line in result.stdout.splitlines():
+                    if not line.startswith("{"): continue
+                    row = json.loads(line)
+                    size = row["MemUsage"].split("/")[0].strip()
+                    match = re.fullmatch(r"([0-9.]+)([A-Za-z]+)", size)
+                    if match:
+                        factor = {"B": 1 / 1048576, "KiB": 1 / 1024, "MiB": 1, "GiB": 1024}[match[2]]
+                        values[row["Name"].rsplit("-", 1)[-1]] = float(match[1]) * factor
+        if values:
+            memory_samples.append({"seconds": round(time.monotonic() - memory_started, 2),
+                                   "mib": values, "total_mib": sum(values.values())})
+
+    def monitor_memory():
+        while not memory_stop.is_set():
+            try: sample_memory()
+            except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exception:
+                memory_errors.append(str(exception))
+            memory_stop.wait(1)
+
+    def save_memory():
+        memory_stop.set()
+        if memory_thread is not None: memory_thread.join(timeout=20)
+        if memory_samples:
+            roles = ["gateway", "engine", "settlements"]
+            report = {"mode": args.mode, "workload": "exercise flow; three persistent services; snapshots run once separately",
+                      "metric": "process RSS" if args.mode == "jvm" else "Docker memory usage excluding cache",
+                      "peak_mib": {role: round(max(sample["mib"].get(role, 0) for sample in memory_samples), 2) for role in roles},
+                      "peak_simultaneous_total_mib": round(max(sample["total_mib"] for sample in memory_samples), 2),
+                      "last_complete_sample": next((sample for sample in reversed(memory_samples) if all(role in sample["mib"] for role in roles)), None),
+                      "samples": memory_samples, "sampling_errors": memory_errors}
+            (logs / "runtime-memory.json").write_text(json.dumps(report, indent=2))
+            print("Runtime memory peaks (MiB): " + json.dumps(report["peak_mib"]))
+
     base = "http://127.0.0.1:" + str(gateway_port)
 
     def get(path):
@@ -170,6 +222,11 @@ def main():
         for role in ["settlements", "engine", "gateway"]: start(role)
         wait_for("gateway and engine readiness", lambda: book()["instrument"] == "BTC/BRL", seconds=90)
         expect_balance("unknown", "BRL", 0)
+        if args.measure_memory:
+            memory_started = time.monotonic()
+            memory_thread = threading.Thread(target=monitor_memory, daemon=True)
+            memory_thread.start()
+            time.sleep(10)
         send("U1", "fund-buyer", "A", "55=BRL|38=600000|")
         send("U1", "fund-seller", "B", "55=BTC|38=1|")
         expect_balance("A", "BRL", 600000)
@@ -230,6 +287,7 @@ def main():
             (logs / "native-memory.txt").write_text(stats.stdout)
         print("All exercise checks passed (" + args.mode + "). Logs: " + str(logs))
     finally:
+        save_memory()
         for role in ["gateway", "engine", "settlements"]: stop(role)
         for handle in handles: handle.close()
         for topic in created_topics:
