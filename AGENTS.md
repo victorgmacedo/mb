@@ -1,155 +1,29 @@
-# Memória do Projeto
+@/Users/victor/.codex/RTK.md
 
-Este projeto é uma implementação modular Java 25 de um CLOB sob o pacote `br.com.mb`.
+# Memória do projeto
 
-Sempre execute comandos de shell via `rtk` neste workspace, por exemplo:
+CLOB simplificado Java 25 sob br.com.mb. Sempre prefixe comandos shell com rtk.
 
-```bash
-rtk ./gradlew clean test
-rtk git status --short
-```
+## Arquitetura atual
 
-## Arquitetura Atual
+Módulos Gradle: shared (Asset/FIX/HTTP), command-log (Kafka), engine (book, estratégias, consultas), ledger (saldos em memória), gateway (HTTP e proxy).
 
-Módulos:
+Dois processos: gateway e engine. Fluxo gateway -> Kafka commands -> engine -> Kafka events. Consultas de book/saldo vão do gateway para o engine HTTP. Ledger pertence ao mesmo engine, com liquidação síncrona. Uma partição de commands e um engine ativo.
 
-- `shared`: parsing FIX e pequenos value objects compartilhados.
-- `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
-- `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
-- `engine`: recupera book via `book-journal`, consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka, publica eventos FIX e possui codec Protobuf para snapshots binários.
-- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via jOOQ.
+Books ficam em memória entre comandos. OrderBook calcula PlacementPlan sem mutar makers; BalanceReservations monta BalanceChanges; InMemoryLedger valida somente saldos afetados antes de aplicar o lote; EngineState efetiva o plano. O monitor do handler serializa comandos/consultas. Nenhuma reconstrução/cópia de todos os books por comando.
 
-O pacote base padrão é `br.com.mb`.
+Strategy por D/F/U1/U6, prioridade preço-tempo, preço do maker, reserva available/locked, cancelamento libera restante, STP rejeita ordem integral. Unidades long positivas, sem escala implícita, com overflow financeiro verificado. Catálogo BTC/BRL, ETH/BRL, ETH/BTC.
 
-## Fluxo em Execução
+Reenvios são deduplicados por MsgType:ClOrdID apenas na sessão. Queda de publicação pode repetir eventos. Reinício apaga saldo/book/cache, usa grupo Kafka novo e posição no fim do tópico antes da prontidão HTTP. Comandos enviados durante indisponibilidade podem não pertencer à sessão nova. Não há failover, fencing, snapshots, replay, PostgreSQL, jOOQ, Protobuf, JPMS ou build nativo.
 
-```mermaid
-flowchart LR
-    Client --> Gateway
-    Gateway --> Commands[Kafka commands]
-    Commands --> Engine
-    Engine --> Postgres[(PostgreSQL ledger)]
-    Engine --> Events[Kafka events]
-    Engine --> Settlements[Kafka settlements]
-    Engine --> BookJournal[Kafka book-journal]
-```
-
-## Comportamento Atual do Engine
-
-- Suporta FIX inbound `35=D` NewOrderSingle, `35=F` OrderCancelRequest e `35=U1` FundingCredit e `35=U6` FundingDebit internos.
-- Mantém um `OrderBook` em memória por instrumento.
-- Instrumentos conhecidos atualmente: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`.
-- O catálogo do engine mapeia instrumento para base/cotação.
-- Antes do matching, compra reserva `price * quantity` no ativo de cotação e venda reserva `quantity` no ativo base.
-- Cancelamento aceito libera a reserva restante da ordem aberta.
-- Funding `35=U1` credita saldo disponível usando `Account(1)`, `ClOrdID(11)`, `Asset(55)` e `Amount(38)`.
-- Funding duplicado com o mesmo `ClOrdID(11)` não duplica crédito, pois o ledger persiste o comando processado em PostgreSQL.
-- Funding duplicado com mesmo `ClOrdID(11)` e payload divergente é rejeitado.
-- Usa prioridade preço-tempo.
-- Usa preço do maker para trades.
-- Persiste mutações aceitas do book no tópico `book-journal`: `35=U4` para ordem aceita e `35=U5` para cancelamento aceito.
-- Cada ordem aceita recebe `entrySequence` monotônico, publicado em `U4` como tag interna `10003`.
-- Cada ordem aceita recebe `enteredAt` em ISO-8601/UTC, publicado em `U4` como tag interna `10004` para auditoria.
-- O runtime recupera `EngineState` de `engine_durable_books` no PostgreSQL; snapshot/journal Kafka permanecem como projeção.
-- Decisão, saldo, book, instruções de liquidação e outbox compartilham uma transação PostgreSQL; duplicatas por offset e MsgType/ClOrdID não repetem efeitos.
-- Ownership usa o consumer group e epoch persistido por partição; fencing é validado sob o mesmo bloqueio da transação.
-- A versão atual restaura/persiste todos os books por comando e serializa decisões com bloqueio global. Limites e migração: `docs/ENGINE-CONSISTENCY.md`.
-- Publica cada trade no tópico `settlements` como FIX-like `35=U2`.
-- Compra taker executada abaixo do preço limite publica liberação de price improvement como FIX-like `35=U3`.
-- Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
-- Publica FIX `BusinessMessageReject(35=j)` para rejeições de validação/negócio.
-- Persiste checkpoints Protobuf em PostgreSQL (`bytea`), com offsets por partição, schema, checksum e timestamp; restaura o último válido antes do replay incremental.
-- `runBookSnapshots` gera checkpoints periódicos em processo separado a partir do journal, fora do matching; suporta `--args=--once`.
-- Previne self-trade por Account(1): rejeita integralmente a nova ordem se o matching preço-tempo alcançar uma ordem da mesma conta, antes de reservar saldo ou publicar journal.
-
-## Comportamento Atual do Ledger
-
-- O runtime padrão usa `PostgresLedgerFactory` e `JooqLedger`.
-- Persistência em PostgreSQL na tabela `ledger_balances`.
-- Usa jOOQ sobre o driver PostgreSQL com schema explícito e transações READ COMMITTED, sem Spring/JPA/Hibernate.
-- Configuração padrão local: `jdbc:postgresql://localhost:5432/mb`, usuário `mb`, senha `mb`.
-- Variáveis suportadas: `MB_LEDGER_JDBC_URL`, `MB_LEDGER_USERNAME`, `MB_LEDGER_PASSWORD`, `MB_LEDGER_INITIALIZE_SCHEMA`.
-- Mantém `AssetBalance` por conta/ativo com buckets `available` e `locked`.
-- `credit` aumenta saldo disponível.
-- `reserve` move saldo disponível para bloqueado.
-- `release` devolve saldo bloqueado para disponível.
-- `settle` liquida trades consumindo saldos bloqueados conforme o lado do maker.
-- O ledger valida todos os saldos bloqueados necessários antes de mutar contas na liquidação.
-- `LedgerSettlementApplication` consome `settlements` e aplica `U2/U3` idempotentemente usando `ExecID(17)`.
-- `settlement_instructions` registra PENDING/APPLIED/FAILED; falhas financeiras rebobinam o lote e recebem retry. FIX inválido é persistido em `invalid_settlements`.
-- `runLedgerReconciliation` aplica instruções pendentes diretamente do banco; suporta `--args=--once`.
-
-## Comandos Importantes
+## Comandos
 
 ```bash
 rtk ./gradlew clean test
-rtk docker compose config
-rtk docker compose up -d
-rtk ./gradlew :ledger:runLedgerSettlements
+rtk docker compose up -d kafka kafka-init
 rtk ./gradlew :engine:runEngine
-rtk ./gradlew :engine:runBookSnapshots
 rtk ./gradlew :gateway:runGateway
+rtk proxy python3 scripts/verify-exercise.py
 ```
 
-## Estilo de Commit Usado Até Aqui
-
-Manter commits pequenos e temáticos. Exemplos existentes:
-
-- `feat: add shared FIX message parser`
-- `feat: add Kafka command log adapters`
-- `feat: publish FIX commands through gateway`
-- `feat: consume FIX commands in engine`
-- `feat: validate engine order intake`
-- `feat: store accepted orders in memory book`
-- `feat: match limit orders in memory book`
-
-## Pendências Mapeadas
-
-- snapshots reais do book:
-  - definir compactação/retenção segura do `book-journal`
-  - definir limpeza de checkpoints antigos e persistir identidade/epoch do tópico para detectar recriação
-- consistência engine/ledger:
-  - definir compensação e tratamento operacional de falhas financeiras permanentes
-  - definir retenção da outbox e dos registros de idempotência
-  - verificar consistência entre book recuperado e saldos `locked`
-- matching mais completo:
-  - avaliar suporte a market, IOC, FOK e post-only
-  - melhorar controle de status parcial/final
-  - garantir execução determinística por instrumento/partição
-- gateway FIX mais robusto:
-  - validação FIX mais próxima do protocolo
-  - session handling se evoluir para FIX real, incluindo logon/logout, heartbeat, sequência e resend
-  - autenticação/autorização de contas
-- escala por instrumento:
-  - definir particionamento Kafka por instrumento
-  - garantir ownership de instrumento por pod
-  - substituir bloqueio global e cópia de todos os books por processamento independente por instrumento/partição
-  - validar failover com brokers Kafka e pods reais
-- persistência operacional:
-  - migrations com Flyway ou Liquibase
-  - schema explícito para ledger e snapshots
-  - índices, constraints e versionamento
-  - separar configurações dev/prod
-- observabilidade:
-  - logs estruturados
-  - métricas de latência de matching, profundidade do book, lag Kafka, rejeições e settlements pendentes
-  - health checks
-  - tracing entre gateway, engine e ledger
-- testes de integração:
-  - Testcontainers para Kafka/PostgreSQL
-  - teste end-to-end de gateway -> commands -> engine -> settlements/events -> ledger
-  - teste de recovery com replay
-  - teste de idempotência com mensagens duplicadas
-  - teste de concorrência no ledger
-- hardening:
-  - graceful shutdown
-  - backpressure
-  - retry Kafka
-  - DLQ para mensagens inválidas
-  - segurança de secrets
-  - Dockerfiles por módulo
-  - pipeline CI
-
-## Próximo Trabalho Provável
-
-A próxima evolução é remover o bloqueio global, definir identidade/epoch dos tópicos e validar failover end-to-end com Kafka/pods reais. Decisões duráveis, outbox, fencing e status/reconciliação financeira estão em `docs/ENGINE-CONSISTENCY.md`; snapshots de projeção em `docs/BOOK-SNAPSHOTS.md`.
+Documentos atuais em README.md e docs/. Preserve commits pequenos e temáticos (feat/refactor/test/docs). Não reintroduza infraestrutura distribuída sem requisito explícito. Escopo é o exercício técnico, com Kafka mantido por escolha do usuário.

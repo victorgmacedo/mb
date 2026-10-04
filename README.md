@@ -1,121 +1,105 @@
 # CLOB — livro de ofertas e matching
 
-Implementação modular em Java 25 de um CLOB simplificado para ordens limitadas. Cobre inserção, cancelamento, matching e transferência de ativos, além de crédito, débito e consultas de saldo e book por HTTP.
+Implementação do exercício técnico MB em Java 25. Insere e cancela ordens limitadas, executa matching parcial ou completo e gerencia saldos/reservas. Crédito, débito e consultas de saldo/book também estão implementados.
 
-O projeto usa biblioteca padrão para HTTP e concorrência, e jOOQ para acesso ao banco. Kafka mantém os logs; PostgreSQL persiste saldos, decisões do engine, outbox, idempotência e checkpoints; Protobuf codifica snapshots. Não usa Spring, JPA ou Hibernate.
+Kafka permanece no fluxo de comandos e eventos. Books e saldos vivem **em memória no mesmo engine**; os trades são liquidados durante o processamento do comando. Não há PostgreSQL, ORM, snapshots, replay ou processo de liquidação separado.
+
+```mermaid
+flowchart LR
+    Cliente --> Gateway[Gateway HTTP / FIX]
+    Gateway --> Commands[Kafka commands]
+    Commands --> Engine[Engine: book e saldos em memória]
+    Engine --> Events[Kafka events / FIX]
+    Gateway -->|consultas HTTP| Engine
+```
 
 ## Compilar e testar
 
-Pré-requisitos: JDK 25, Docker com Compose e, para a demonstração automatizada, Python 3. O Gradle Wrapper está versionado; a toolchain também pode ser provisionada pelo resolver Foojay.
+Pré-requisito: JDK 25. O Gradle Wrapper está versionado, e a toolchain pode ser provisionada pelo resolver Foojay. Testes unitários e HTTP não exigem Kafka ou banco.
 
 ```bash
-./gradlew clean test
-docker compose up -d
+rtk ./gradlew clean test
 ```
 
-Os testes de integração PostgreSQL usam schemas temporários próprios:
+## Executar
+
+Para execução completa, use Docker com Compose para subir **apenas Kafka**:
 
 ```bash
-MB_LEDGER_TEST_JDBC_URL=jdbc:postgresql://localhost:5432/mb \
-MB_SNAPSHOT_TEST_JDBC_URL=jdbc:postgresql://localhost:5432/mb \
-./gradlew test --rerun-tasks
+rtk docker compose up -d kafka kafka-init
 ```
 
-## Verificar todas as operações
-
-Com Kafka e PostgreSQL saudáveis, execute:
+Em dois terminais, inicie primeiro o engine e espere a mensagem `Engine ready`; depois inicie o gateway:
 
 ```bash
-python3 scripts/verify-exercise.py
+rtk ./gradlew :engine:runEngine
+rtk ./gradlew :gateway:runGateway
 ```
 
-O script cria tópicos e schema exclusivos, inicia os serviços em portas disponíveis, verifica crédito/débito idempotentes, o exemplo de 1 BTC por 500 mil BRL, saldo reservado, matching parcial, preço do maker, cancelamento, rejeições, projeção de snapshots e recovery do book durável. Remove seus serviços e dados ao terminar. Os logs ficam em `build/verify_*`.
+O gateway atende em `http://localhost:8080`; as consultas internas do engine ficam em `http://127.0.0.1:8081`. Execute **um engine ativo** e mantenha **uma partição de commands**. O startup recusa tópicos commands com outra quantidade de partições.
 
-## Executar os serviços manualmente
+## Verificação automatizada
 
-Após `docker compose up -d`, use um terminal para cada processo:
+Com Kafka saudável e Python 3 instalado:
 
 ```bash
-./gradlew :ledger:runLedgerSettlements
-./gradlew :engine:runEngine
-./gradlew :gateway:runGateway
+rtk proxy python3 scripts/verify-exercise.py
 ```
 
-O gateway escuta em `http://localhost:8080`. O engine serve a visão interna do book em `127.0.0.1:8081`. Snapshots periódicos são opcionais:
+O script cria dois tópicos exclusivos, inicia gateway/engine em portas livres, verifica as operações e remove seus processos, tópicos e grupos ao terminar. Inclui o exemplo de 1 BTC por 500 mil BRL, matching parcial, reserva, melhoria de preço, cancelamento, rejeições, reenvios e reinício com estado vazio. Logs ficam em `build/verify_*`. Não acessa PostgreSQL nem dados de outros tópicos.
+
+## Exemplo manual
+
+`POST /commands` recebe FIX textual com `|` ou SOH. HTTP **202 confirma publicação no Kafka**, não sucesso de negócio. A resposta do engine é enviada em `events`: `35=8` para execução/aceitação e `35=j` para rejeição. A consulta posterior pode acontecer antes de o comando ser consumido; aguarde o evento ou consulte até observar o resultado.
 
 ```bash
-./gradlew :engine:runBookSnapshots
-# Ou apenas um checkpoint:
-./gradlew :engine:runBookSnapshots --args=--once
-```
+# Crédito: A recebe BRL e B recebe BTC.
+curl -i http://localhost:8080/commands --data '8=FIX.4.4|35=U1|49=gateway|1=A|11=fund-A|55=BRL|38=600000|'
+curl -i http://localhost:8080/commands --data '8=FIX.4.4|35=U1|49=gateway|1=B|11=fund-B|55=BTC|38=1|'
 
-## Operações HTTP
+# Aguarde os créditos antes de enviar a venda e a compra.
+curl -i http://localhost:8080/commands --data '8=FIX.4.4|35=D|49=gateway|1=B|11=sell-1|55=BTC/BRL|54=2|44=500000|38=1|'
+curl -i http://localhost:8080/commands --data '8=FIX.4.4|35=D|49=gateway|1=A|11=buy-1|55=BTC/BRL|54=1|44=500000|38=1|'
 
-`POST /commands` recebe FIX textual, aceitando `|` ou SOH como delimitador. HTTP 202 confirma que o comando foi publicado no Kafka; o engine responde em `events` com `35=8` para sucesso ou `35=j` para rejeição. A liquidação de trades é assíncrona: consulte até observar o resultado esperado.
+# Débito usa apenas saldo disponível.
+curl -i http://localhost:8080/commands --data '8=FIX.4.4|35=U6|49=gateway|1=A|11=debit-A|55=BRL|38=50000|'
 
-Use identificadores novos para ordens e cancelamentos. Crédito e débito são idempotentes por tipo e `ClOrdID(11)`; reutilizar o identificador com payload diferente é rejeitado.
+# Ordem sem cruzamento e cancelamento por sua conta proprietária.
+curl -i http://localhost:8080/commands --data '8=FIX.4.4|35=D|49=gateway|1=A|11=resting-A|55=BTC/BRL|54=1|44=100|38=1|'
+curl -i http://localhost:8080/commands --data '8=FIX.4.4|35=F|49=gateway|1=A|11=cancel-A|55=BTC/BRL|41=resting-A|'
 
-```bash
-# Crédito: comprador A recebe BRL; vendedor B recebe BTC.
-curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
-  --data '8=FIX.4.4|35=U1|49=gateway|1=A|11=fund-A|55=BRL|38=600000|'
-curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
-  --data '8=FIX.4.4|35=U1|49=gateway|1=B|11=fund-B|55=BTC|38=1|'
-
-# Venda limitada e compra: 1 BTC por 500 mil BRL.
-curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
-  --data '8=FIX.4.4|35=D|49=gateway|1=B|11=sell-1|55=BTC/BRL|54=2|44=500000|38=1|'
-curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
-  --data '8=FIX.4.4|35=D|49=gateway|1=A|11=buy-1|55=BTC/BRL|54=1|44=500000|38=1|'
-
-# Débito do saldo disponível; nunca utiliza saldo bloqueado.
-curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
-  --data '8=FIX.4.4|35=U6|49=gateway|1=A|11=debit-A|55=BRL|38=50000|'
-
-# Ordem sem cruzamento e cancelamento pela mesma conta.
-curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
-  --data '8=FIX.4.4|35=D|49=gateway|1=A|11=resting-A|55=BTC/BRL|54=1|44=100|38=1|'
-curl -i http://localhost:8080/commands -H 'Content-Type: text/plain' \
-  --data '8=FIX.4.4|35=F|49=gateway|1=A|11=cancel-A|55=BTC/BRL|41=resting-A|'
-
-# Consultas: disponível, bloqueado, total e níveis/ordens do book.
 curl 'http://localhost:8080/accounts/A/balances?asset=BRL'
 curl 'http://localhost:8080/accounts/A/balances?asset=BTC'
 curl 'http://localhost:8080/books?instrument=BTC%2FBRL'
+
+# Ler respostas; o histórico de eventos não representa o estado de uma sessão nova.
+rtk docker exec mb-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic events --from-beginning
 ```
 
-Após essas operações e a liquidação, A tem 1 BTC e 50000 BRL disponíveis; B tem 500000 BRL e nenhum BTC. O book fica vazio e não restam reservas.
+Após processamento, A tem 1 BTC e 50000 BRL disponíveis; B tem 500000 BRL disponíveis. O book está vazio e as reservas foram liberadas/consumidas.
 
-Saldo de conta/ativo sem registro retorna zero. Instrumento conhecido sem ordens retorna listas vazias; desconhecido retorna 404. Consultas malformadas retornam 400, métodos incompatíveis 405 e indisponibilidade de dependências 503.
+## Regras e premissas
 
-## Docker e executáveis nativos
+- Mercados: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`. Apenas ordens limitadas; o resto não executado descansa no book.
+- Prioridade preço-tempo e preço do maker. Uma nova ordem que alcançaria contraparte da mesma conta é rejeitada integralmente.
+- Preço e quantidade são `long` positivos. Os exemplos usam unidades inteiras; não existe escala decimal implícita. Multiplicação/soma financeira verifica overflow.
+- Compra reserva preço-limite × quantidade na cotação; venda reserva quantidade do ativo base. Cancelamento libera só o restante. Melhorias de preço são liberadas imediatamente.
+- O engine calcula os fills sem alterar os makers, valida um lote financeiro com apenas as contas/ativos afetados e então atualiza o book. Nenhum book é recarregado ou copiado integralmente por comando.
+- Comandos e consultas são serializados pelo mesmo monitor do handler. Matching e liquidação são síncronos no engine; Kafka continua sendo uma fronteira assíncrona.
+- Reenvios iguais com `MsgType:ClOrdID` não repetem efeitos **na mesma sessão**; conteúdo/chave divergente é rejeitado. Use IDs novos para novos pedidos, inclusive depois de uma rejeição. Respostas podem ser repetidas quando a publicação falha.
+- Reiniciar o engine **apaga books, saldos e deduplicação**. Cada startup usa um grupo Kafka novo e estabelece posição no fim do tópico antes de abrir a consulta HTTP. Não há recuperação do histórico; comandos enviados antes da prontidão ou durante indisponibilidade podem ficar fora da nova sessão, mesmo com HTTP 202.
+- Não há garantia de failover, operação com múltiplos engines, exactly once ou entrega durável de eventos após queda do processo. O Kafka retém mensagens, mas não torna o estado em memória durável.
+- Conta é declarada pelo cliente; autenticação/autorização não fazem parte desta demonstração. Não exponha esse gateway como serviço financeiro de produção.
 
-Há uma imagem nativa por processo: gateway, engine, settlements e snapshots. `shared` e `command-log` são bibliotecas incluídas nos executáveis. As imagens finais não incluem JVM.
+## Configuração
 
-```bash
-docker build --target gateway -t mb-gateway:native .
-docker build --target engine -t mb-engine:native .
-docker build --target settlements -t mb-settlements:native .
-docker build --target snapshots -t mb-snapshots:native .
-docker compose -f docker-compose.yml -f compose.native.yml up -d
-```
+| Variável | Default | Uso |
+|---|---|---|
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Broker para gateway/engine. |
+| `KAFKA_COMMANDS_TOPIC` | `commands` | Entrada do engine, uma partição. |
+| `KAFKA_EVENTS_TOPIC` | `events` | Respostas FIX. |
+| `GATEWAY_HOST` / `GATEWAY_PORT` | `0.0.0.0` / `8080` | Servidor público local. |
+| `ENGINE_HOST` / `ENGINE_PORT` | `127.0.0.1` / `8081` | Consultas de saldo e book no engine. |
+| `ENGINE_URL` | `http://127.0.0.1:8081` | Destino das consultas do gateway. |
 
-Para verificar os executáveis nativos com os mesmos cenários e dados isolados:
-
-```bash
-python3 scripts/verify-exercise.py --mode native
-```
-
-Build e configuração em [docs/NATIVE.md](docs/NATIVE.md).
-
-## Decisões e limites
-
-- Instrumentos: `BTC/BRL`, `ETH/BRL`, `ETH/BTC`; apenas ordens limitadas.
-- Preço e quantidade usam `long` positivo, sem ponto flutuante. Os exemplos usam unidades inteiras de BTC e BRL. Não existe escala decimal implícita; uma integração fracionária precisa definir unidades e escala explicitamente.
-- Matching usa prioridade preço-tempo e preço do maker. A quantidade executada sai de ambas as ordens; a parte restante pode descansar no book.
-- Compras reservam preço-limite × quantidade na cotação; vendas reservam quantidade no ativo base. Cancelamentos liberam o restante e compras com melhoria de preço recebem a diferença.
-- Uma ordem que alcançaria contraparte da mesma conta é rejeitada integralmente antes de reservar saldo ou executar trades.
-- O ambiente demonstrativo usa uma partição. Ownership/fencing por partição e decisões duráveis estão implementados; o processamento usa bloqueio global no PostgreSQL e ainda não escala linearmente por instrumento. Veja [consistência e migração](docs/ENGINE-CONSISTENCY.md).
-- As transações jOOQ garantem atomicidade no ledger. Book, Kafka e ledger não formam uma transação distribuída; reconciliação de falhas entre esses componentes continua sendo evolução de produção.
-
-Arquitetura em [docs/DESIGN.md](docs/DESIGN.md), decisões, justificativas, tradeoffs e riscos em [docs/ARCHITECTURAL-DECISIONS.md](docs/ARCHITECTURAL-DECISIONS.md), operação em [docs/RUNBOOK.md](docs/RUNBOOK.md), checkpoints em [docs/BOOK-SNAPSHOTS.md](docs/BOOK-SNAPSHOTS.md) e responsabilidades de todas as classes de produção em [docs/CLASS-FLOWS.md](docs/CLASS-FLOWS.md). Documentos em `docs/superpowers` registram decisões históricas; não substituem estas instruções atuais.
+Arquitetura: [DESIGN](docs/DESIGN.md). Decisões e riscos: [ARCHITECTURAL-DECISIONS](docs/ARCHITECTURAL-DECISIONS.md). Fluxos/classes: [CLASS-FLOWS](docs/CLASS-FLOWS.md). Estrutura do book: [BOOK-STRUCTURE](docs/BOOK-STRUCTURE.md). Consistência: [ENGINE-CONSISTENCY](docs/ENGINE-CONSISTENCY.md). Operação: [RUNBOOK](docs/RUNBOOK.md).
