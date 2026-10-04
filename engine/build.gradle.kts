@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":command-log"))
     implementation(project(":ledger"))
     implementation("com.google.protobuf:protobuf-java:4.36.2")
+    implementation("org.jooq:jooq:3.21.9")
     runtimeOnly("org.postgresql:postgresql:42.7.8")
     testRuntimeOnly("com.h2database:h2:2.4.240")
 }

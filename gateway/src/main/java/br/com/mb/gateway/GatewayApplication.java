@@ -3,7 +3,7 @@ package br.com.mb.gateway;
 import br.com.mb.commandlog.kafka.KafkaCommandPublisher;
 import br.com.mb.gateway.config.GatewayConfig;
 import br.com.mb.gateway.http.GatewayHttpServer;
-import br.com.mb.ledger.jdbc.PostgresLedgerFactory;
+import br.com.mb.ledger.jooq.PostgresLedgerFactory;
 import br.com.mb.shared.logging.LoggingConfig;
 import br.com.mb.shared.logging.StructuredLogger;
 import br.com.mb.shared.logging.TelemetryContext;

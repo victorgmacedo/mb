@@ -1,4 +1,4 @@
-package br.com.mb.ledger.jdbc;
+package br.com.mb.ledger.jooq;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

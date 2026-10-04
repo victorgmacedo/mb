@@ -3,7 +3,7 @@ module br.com.mb.engine {
     requires br.com.mb.ledger;
     requires br.com.mb.shared;
     requires com.google.protobuf;
-    requires java.sql;
+    requires org.jooq;
     requires jdk.httpserver;
 
     exports br.com.mb.engine.http;

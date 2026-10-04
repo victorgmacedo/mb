@@ -1,4 +1,4 @@
-package br.com.mb.ledger.jdbc;
+package br.com.mb.ledger.jooq;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -11,7 +11,6 @@ import br.com.mb.ledger.domain.LedgerException;
 import br.com.mb.ledger.domain.SettlementSide;
 import br.com.mb.ledger.domain.TradeSettlementInstruction;
 import br.com.mb.shared.model.Asset;
-import java.sql.DriverManager;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -20,7 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 @EnabledIfEnvironmentVariable(named = "MB_LEDGER_TEST_JDBC_URL", matches = ".+")
-class JdbcLedgerTest {
+class JooqLedgerTest {
 
     @Test
     void preservesTransactionsDeduplicationAndConcurrentLocksOnPostgres() throws Exception {
@@ -29,10 +28,10 @@ class JdbcLedgerTest {
         var password = System.getenv().getOrDefault("MB_LEDGER_PASSWORD", "mb");
         var schema = "ledger_test_" + UUID.randomUUID().toString().replace("-", "");
         var url = baseUrl + (baseUrl.contains("?") ? "&" : "?") + "currentSchema=" + schema;
-        try (var connection = DriverManager.getConnection(baseUrl, user, password); var statement = connection.createStatement()) {
+        try (var statement = JooqDatabase.open(baseUrl, user, password)) {
             statement.execute("CREATE SCHEMA " + schema);
             try {
-                var ledger = new JdbcLedger(url, user, password);
+                var ledger = new JooqLedger(url, user, password);
                 ledger.initialize();
                 var buyer = new AccountId("buyer");
                 var seller = new AccountId("seller");
@@ -40,7 +39,7 @@ class JdbcLedgerTest {
                 var quote = new Asset("BRL");
                 assertEquals(AssetBalance.zero(), ledger.balanceOf(buyer, quote));
                 assertTrue(ledger.creditFunding("fund", buyer, quote, 1_100));
-                assertFalse(new JdbcLedger(url, user, password).creditFunding("fund", buyer, quote, 1_100));
+                assertFalse(new JooqLedger(url, user, password).creditFunding("fund", buyer, quote, 1_100));
                 assertThrows(LedgerException.class, () -> ledger.creditFunding("fund", buyer, quote, 1_101));
                 ledger.reserve(buyer, quote, 1_000);
                 assertThrows(LedgerException.class, () -> ledger.debitFunding("retry", buyer, quote, 101));
@@ -58,7 +57,7 @@ class JdbcLedgerTest {
                 assertEquals(new AssetBalance(1_000, 0), ledger.balanceOf(seller, quote));
                 assertEquals(new AssetBalance(50, 0), ledger.balanceOf(buyer, quote));
                 try (var workers = Executors.newFixedThreadPool(4)) {
-                    Callable<Boolean> once = () -> new JdbcLedger(url, user, password).debitFunding("concurrent", seller, quote, 100);
+                    Callable<Boolean> once = () -> new JooqLedger(url, user, password).debitFunding("concurrent", seller, quote, 100);
                     var results = workers.invokeAll(List.of(once, once, once, once));
                     var applied = 0;
                     for (var result : results) if (result.get()) applied++;

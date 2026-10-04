@@ -19,7 +19,7 @@ import br.com.mb.engine.ledger.BalanceReservations;
 import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.Ledger;
 import br.com.mb.ledger.domain.LedgerException;
-import br.com.mb.ledger.jdbc.PostgresLedgerFactory;
+import br.com.mb.ledger.jooq.PostgresLedgerFactory;
 import br.com.mb.shared.fix.FixMessage;
 import br.com.mb.shared.fix.InvalidFixMessageException;
 import br.com.mb.shared.model.Asset;

@@ -1,4 +1,16 @@
-package br.com.mb.ledger.jdbc;
+package br.com.mb.ledger.jooq;
+
+import static br.com.mb.ledger.jooq.LedgerTables.ACCOUNT;
+import static br.com.mb.ledger.jooq.LedgerTables.AMOUNT;
+import static br.com.mb.ledger.jooq.LedgerTables.ASSET;
+import static br.com.mb.ledger.jooq.LedgerTables.AVAILABLE;
+import static br.com.mb.ledger.jooq.LedgerTables.BALANCES;
+import static br.com.mb.ledger.jooq.LedgerTables.COMMAND_ID;
+import static br.com.mb.ledger.jooq.LedgerTables.COMMANDS;
+import static br.com.mb.ledger.jooq.LedgerTables.HASH;
+import static br.com.mb.ledger.jooq.LedgerTables.LOCKED;
+import static br.com.mb.ledger.jooq.LedgerTables.TYPE;
+import static br.com.mb.ledger.jooq.LedgerTables.VERSION;
 
 import br.com.mb.ledger.domain.AccountId;
 import br.com.mb.ledger.domain.AssetBalance;
@@ -11,9 +23,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HexFormat;
@@ -21,15 +30,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import org.jooq.DSLContext;
+import org.jooq.exception.DataAccessException;
 
 /** PostgreSQL ledger with explicit transactions, stable row locks and durable command deduplication. */
-public final class JdbcLedger implements Ledger {
+public final class JooqLedger implements Ledger {
 
     private final String url;
     private final String username;
     private final String password;
 
-    public JdbcLedger(String url, String username, String password) {
+    public JooqLedger(String url, String username, String password) {
         this.url = Objects.requireNonNull(url);
         this.username = Objects.requireNonNull(username);
         this.password = Objects.requireNonNull(password);
@@ -37,14 +49,11 @@ public final class JdbcLedger implements Ledger {
 
     public void initialize() {
         transaction(connection -> {
-            try (var input = JdbcLedger.class.getResourceAsStream("/ledger-schema.sql")) {
+            try (var input = JooqLedger.class.getResourceAsStream("/ledger-schema.sql")) {
                 if (input == null) throw new IllegalStateException("ledger-schema.sql missing");
                 var schema = new String(input.readAllBytes(), StandardCharsets.UTF_8);
-                try (var statement = connection.createStatement()) {
-                    // Processes may initialize the same schema simultaneously.
-                    statement.execute("SELECT pg_advisory_xact_lock(724813521)");
-                    for (var sql : schema.split(";")) if (!sql.isBlank()) statement.execute(sql);
-                }
+                connection.execute("SELECT pg_advisory_xact_lock(724813521)");
+                for (var sql : schema.split(";")) if (!sql.isBlank()) connection.execute(sql);
             } catch (IOException exception) {
                 throw new LedgerStorageException("Could not read ledger schema", exception);
             }
@@ -118,13 +127,9 @@ public final class JdbcLedger implements Ledger {
     public AssetBalance balanceOf(AccountId account, Asset asset) {
         var key = new BalanceKey(account, asset);
         return transaction(connection -> {
-            try (var query = connection.prepareStatement("SELECT available, locked FROM ledger_balances WHERE account_id=? AND asset_symbol=?")) {
-                query.setString(1, key.account().value());
-                query.setString(2, key.asset().symbol());
-                try (var rows = query.executeQuery()) {
-                    return rows.next() ? new AssetBalance(rows.getLong(1), rows.getLong(2)) : AssetBalance.zero();
-                }
-            }
+            var row = connection.select(AVAILABLE, LOCKED).from(BALANCES)
+                .where(ACCOUNT.eq(key.account().value()).and(ASSET.eq(key.asset().symbol()))).fetchOne();
+            return row == null ? AssetBalance.zero() : new AssetBalance(row.get(AVAILABLE), row.get(LOCKED));
         });
     }
 
@@ -145,7 +150,7 @@ public final class JdbcLedger implements Ledger {
         });
     }
 
-    private void settle(Connection connection, TradeSettlementInstruction trade) throws SQLException {
+    private void settle(DSLContext connection, TradeSettlementInstruction trade) {
         var makerBase = new BalanceKey(trade.makerAccountId(), trade.baseAsset());
         var makerQuote = new BalanceKey(trade.makerAccountId(), trade.quoteAsset());
         var takerBase = new BalanceKey(trade.takerAccountId(), trade.baseAsset());
@@ -167,70 +172,55 @@ public final class JdbcLedger implements Ledger {
         });
     }
 
-    private void mutate(Connection connection, List<BalanceKey> keys, Consumer<Map<BalanceKey, LedgerBalance>> operation) throws SQLException {
+    private void mutate(DSLContext connection, List<BalanceKey> keys, Consumer<Map<BalanceKey, LedgerBalance>> operation) {
         var sorted = keys.stream().distinct().sorted(Comparator.comparing((BalanceKey key) -> key.account().value())
             .thenComparing(key -> key.asset().symbol())).toList();
         var balances = new HashMap<BalanceKey, LedgerBalance>();
         for (var key : sorted) {
-            try (var insert = connection.prepareStatement("INSERT INTO ledger_balances(account_id,asset_symbol,available,locked,version) VALUES(?,?,0,0,0) ON CONFLICT(account_id,asset_symbol) DO NOTHING")) {
-                insert.setString(1, key.account().value()); insert.setString(2, key.asset().symbol()); insert.executeUpdate();
-            }
-            try (var query = connection.prepareStatement("SELECT available,locked FROM ledger_balances WHERE account_id=? AND asset_symbol=? FOR UPDATE")) {
-                query.setString(1, key.account().value()); query.setString(2, key.asset().symbol());
-                try (var rows = query.executeQuery()) {
-                    if (!rows.next()) throw new SQLException("balance missing after insert");
-                    balances.put(key, new LedgerBalance(key.account().value(), key.asset().symbol(), rows.getLong(1), rows.getLong(2)));
-                }
-            }
+            connection.insertInto(BALANCES, ACCOUNT, ASSET, AVAILABLE, LOCKED, VERSION)
+                .values(key.account().value(), key.asset().symbol(), 0L, 0L, 0L)
+                .onConflict(ACCOUNT, ASSET).doNothing().execute();
+            var row = connection.select(AVAILABLE, LOCKED).from(BALANCES)
+                .where(ACCOUNT.eq(key.account().value()).and(ASSET.eq(key.asset().symbol()))).forUpdate().fetchOne();
+            if (row == null) throw new LedgerStorageException("balance missing after insert", null);
+            balances.put(key, new LedgerBalance(key.account().value(), key.asset().symbol(), row.get(AVAILABLE), row.get(LOCKED)));
         }
         operation.accept(balances);
         for (var key : sorted) {
             var balance = balances.get(key).toBalance();
-            try (var update = connection.prepareStatement("UPDATE ledger_balances SET available=?,locked=?,version=version+1 WHERE account_id=? AND asset_symbol=?")) {
-                update.setLong(1, balance.available()); update.setLong(2, balance.locked());
-                update.setString(3, key.account().value()); update.setString(4, key.asset().symbol());
-                if (update.executeUpdate() != 1) throw new SQLException("balance update failed");
+            if (connection.update(BALANCES).set(AVAILABLE, balance.available()).set(LOCKED, balance.locked())
+                .set(VERSION, VERSION.add(1L)).where(ACCOUNT.eq(key.account().value()).and(ASSET.eq(key.asset().symbol()))).execute() != 1) {
+                throw new LedgerStorageException("balance update failed", null);
             }
         }
     }
 
-    private boolean record(Connection connection, String type, String id, String account, String asset, long amount, String payload) throws SQLException {
+    private boolean record(DSLContext connection, String type, String id, String account, String asset, long amount, String payload) {
         Objects.requireNonNull(id, "command id must not be null");
         if (id.isBlank()) throw new LedgerException("command id must not be blank");
         var hash = sha256(payload);
-        try (var insert = connection.prepareStatement("INSERT INTO processed_commands(command_type,client_order_id,account_id,asset_symbol,amount,payload_hash) VALUES(?,?,?,?,?,?) ON CONFLICT(command_type,client_order_id) DO NOTHING")) {
-            insert.setString(1,type); insert.setString(2,id); insert.setString(3,account); insert.setString(4,asset);
-            insert.setLong(5,amount); insert.setString(6,hash);
-            if (insert.executeUpdate() == 1) return true;
-        }
-        try (var query = connection.prepareStatement("SELECT account_id,asset_symbol,amount,payload_hash FROM processed_commands WHERE command_type=? AND client_order_id=?")) {
-            query.setString(1,type); query.setString(2,id);
-            try (var rows = query.executeQuery()) {
-                if (!rows.next()) throw new SQLException("processed command missing after conflict");
-                // Older credit records may lack a hash; retain their persisted payload semantics.
-                var matches = type.equals("FUNDING_CREDIT")
-                    ? account.equals(rows.getString(1)) && asset.equals(rows.getString(2)) && amount == rows.getLong(3)
-                    : hash.equals(rows.getString(4));
-                if (!matches) throw new LedgerException(type.equals("FUNDING_CREDIT")
-                    ? "conflicting duplicate funding command" : "conflicting duplicate ledger command");
-                return false;
-            }
-        }
+        if (connection.insertInto(COMMANDS, TYPE, COMMAND_ID, ACCOUNT, ASSET, AMOUNT, HASH)
+            .values(type, id, account, asset, amount, hash).onConflict(TYPE, COMMAND_ID).doNothing().execute() == 1) return true;
+        var row = connection.select(ACCOUNT, ASSET, AMOUNT, HASH).from(COMMANDS)
+            .where(TYPE.eq(type).and(COMMAND_ID.eq(id))).fetchOne();
+        if (row == null) throw new LedgerStorageException("processed command missing after conflict", null);
+        // Older credit records may lack a hash; retain their persisted payload semantics.
+        var matches = type.equals("FUNDING_CREDIT")
+            ? account.equals(row.get(ACCOUNT)) && asset.equals(row.get(ASSET)) && amount == row.get(AMOUNT)
+            : hash.equals(row.get(HASH));
+        if (!matches) throw new LedgerException(type.equals("FUNDING_CREDIT")
+            ? "conflicting duplicate funding command" : "conflicting duplicate ledger command");
+        return false;
     }
 
-    private <T> T transaction(SqlWork<T> work) {
-        try (var connection = DriverManager.getConnection(url, username, password)) {
-            connection.setAutoCommit(false);
-            connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
-            try {
-                var result = work.apply(connection);
-                connection.commit();
-                return result;
-            } catch (SQLException | RuntimeException exception) {
-                try { connection.rollback(); } catch (SQLException rollback) { exception.addSuppressed(rollback); }
-                throw exception;
-            }
-        } catch (SQLException exception) {
+    private <T> T transaction(Function<DSLContext, T> work) {
+        try (var database = JooqDatabase.open(url, username, password)) {
+            return database.transactionResult(configuration -> {
+                var context = configuration.dsl();
+                context.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
+                return work.apply(context);
+            });
+        } catch (DataAccessException exception) {
             throw new LedgerStorageException("Ledger PostgreSQL transaction failed", exception);
         }
     }
@@ -251,8 +241,4 @@ public final class JdbcLedger implements Ledger {
         private BalanceKey { Objects.requireNonNull(account); Objects.requireNonNull(asset); }
     }
 
-    @FunctionalInterface
-    private interface SqlWork<T> {
-        T apply(Connection connection) throws SQLException;
-    }
 }

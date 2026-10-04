@@ -1,18 +1,34 @@
 package br.com.mb.engine.snapshot;
 
+import static br.com.mb.engine.snapshot.SnapshotTables.BOOKS;
+import static br.com.mb.engine.snapshot.SnapshotTables.BOOK_COUNT;
+import static br.com.mb.engine.snapshot.SnapshotTables.CHECKPOINTS;
+import static br.com.mb.engine.snapshot.SnapshotTables.CHECKPOINT_ID;
+import static br.com.mb.engine.snapshot.SnapshotTables.CHECKSUM;
+import static br.com.mb.engine.snapshot.SnapshotTables.CREATED_AT;
+import static br.com.mb.engine.snapshot.SnapshotTables.ID;
+import static br.com.mb.engine.snapshot.SnapshotTables.INSTRUMENT;
+import static br.com.mb.engine.snapshot.SnapshotTables.NEXT_OFFSET;
+import static br.com.mb.engine.snapshot.SnapshotTables.OFFSETS;
+import static br.com.mb.engine.snapshot.SnapshotTables.PARTITION_COUNT;
+import static br.com.mb.engine.snapshot.SnapshotTables.PARTITION_ID;
+import static br.com.mb.engine.snapshot.SnapshotTables.PAYLOAD;
+import static br.com.mb.engine.snapshot.SnapshotTables.SCHEMA_VERSION;
+import static br.com.mb.engine.snapshot.SnapshotTables.TOPIC;
+
+import br.com.mb.ledger.jooq.JooqDatabase;
 import br.com.mb.shared.logging.StructuredLogger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Timestamp;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.jooq.DSLContext;
+import org.jooq.exception.DataAccessException;
 
 public final class PostgresBookSnapshotStore implements BookSnapshotStore {
 
@@ -36,62 +52,57 @@ public final class PostgresBookSnapshotStore implements BookSnapshotStore {
     }
 
     public void initialize() {
-        try (var connection = connect(); var statement = connection.createStatement()) {
-            statement.executeUpdate("""
+        try (var connection = JooqDatabase.open(url, username, password)) {
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS book_snapshot_checkpoints (
                     id UUID PRIMARY KEY, topic VARCHAR(255) NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE NOT NULL, book_count INTEGER NOT NULL,
                     partition_count INTEGER NOT NULL)
                 """);
-            statement.executeUpdate("""
+            connection.execute("""
                 CREATE INDEX IF NOT EXISTS book_snapshot_latest
                 ON book_snapshot_checkpoints(topic, created_at DESC)
                 """);
-            statement.executeUpdate("""
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS book_snapshots (
                     checkpoint_id UUID NOT NULL REFERENCES book_snapshot_checkpoints(id),
                     instrument VARCHAR(255) NOT NULL, schema_version INTEGER NOT NULL,
                     payload BYTEA NOT NULL, checksum VARCHAR(64) NOT NULL,
                     PRIMARY KEY(checkpoint_id, instrument))
                 """);
-            statement.executeUpdate("""
+            connection.execute("""
                 CREATE TABLE IF NOT EXISTS book_snapshot_offsets (
                     checkpoint_id UUID NOT NULL REFERENCES book_snapshot_checkpoints(id),
                     partition_id INTEGER NOT NULL CHECK(partition_id >= 0),
                     next_offset BIGINT NOT NULL CHECK(next_offset >= 0),
                     PRIMARY KEY(checkpoint_id, partition_id))
                 """);
-        } catch (SQLException exception) {
+        } catch (DataAccessException exception) {
             throw new IllegalStateException("Could not initialize book snapshot storage", exception);
         }
     }
 
     @Override
     public Optional<SnapshotCheckpoint> loadLatestValid(String topic) {
-        try (var connection = connect(); var query = connection.prepareStatement("""
-            SELECT id, created_at, book_count, partition_count FROM book_snapshot_checkpoints
-            WHERE topic = ? ORDER BY created_at DESC, id DESC
-            """)) {
-            query.setString(1, topic);
-            try (var rows = query.executeQuery()) {
-                while (rows.next()) {
-                    var id = rows.getObject("id", UUID.class);
-                    try {
-                        var books = loadBooks(connection, id);
-                        var offsets = loadOffsets(connection, id);
-                        if (books.size() != rows.getInt("book_count") || offsets.size() != rows.getInt("partition_count")) {
-                            throw new InvalidBookSnapshotException("Incomplete snapshot checkpoint");
-                        }
-                        var checkpoint = new SnapshotCheckpoint(id, topic, rows.getTimestamp("created_at").toInstant(), offsets, books);
-                        new BookSnapshotRestorer().restore(books);
-                        return Optional.of(checkpoint);
-                    } catch (InvalidBookSnapshotException | IllegalArgumentException exception) {
-                        LOG.info("engine.snapshot.invalid", "checkpoint_id", id.toString(), "reason", exception.getMessage());
+        try (var connection = JooqDatabase.open(url, username, password)) {
+            for (var row : connection.select(ID, CREATED_AT, BOOK_COUNT, PARTITION_COUNT).from(CHECKPOINTS)
+                .where(TOPIC.eq(topic)).orderBy(CREATED_AT.desc(), ID.desc()).fetch()) {
+                var id = row.get(ID);
+                try {
+                    var books = loadBooks(connection, id);
+                    var offsets = loadOffsets(connection, id);
+                    if (books.size() != row.get(BOOK_COUNT) || offsets.size() != row.get(PARTITION_COUNT)) {
+                        throw new InvalidBookSnapshotException("Incomplete snapshot checkpoint");
                     }
+                    var checkpoint = new SnapshotCheckpoint(id, topic, row.get(CREATED_AT).toInstant(), offsets, books);
+                    new BookSnapshotRestorer().restore(books);
+                    return Optional.of(checkpoint);
+                } catch (InvalidBookSnapshotException | IllegalArgumentException exception) {
+                    LOG.info("engine.snapshot.invalid", "checkpoint_id", id.toString(), "reason", exception.getMessage());
                 }
             }
             return Optional.empty();
-        } catch (SQLException exception) {
+        } catch (DataAccessException exception) {
             throw new IllegalStateException("Could not load book snapshot", exception);
         }
     }
@@ -99,84 +110,56 @@ public final class PostgresBookSnapshotStore implements BookSnapshotStore {
     @Override
     public void save(SnapshotCheckpoint checkpoint) {
         new BookSnapshotRestorer().restore(checkpoint.books());
-        try (var connection = connect()) {
-            connection.setAutoCommit(false);
-            try {
-                try (var insert = connection.prepareStatement("INSERT INTO book_snapshot_checkpoints VALUES (?, ?, ?, ?, ?)")) {
-                    insert.setObject(1, checkpoint.id());
-                    insert.setString(2, checkpoint.topic());
-                    insert.setTimestamp(3, Timestamp.from(checkpoint.createdAt()));
-                    insert.setInt(4, checkpoint.books().size());
-                    insert.setInt(5, checkpoint.nextOffsets().size());
-                    insert.executeUpdate();
+        try (var database = JooqDatabase.open(url, username, password)) {
+            database.transaction(configuration -> {
+                var context = configuration.dsl();
+                context.insertInto(CHECKPOINTS, ID, TOPIC, CREATED_AT, BOOK_COUNT, PARTITION_COUNT)
+                    .values(checkpoint.id(), checkpoint.topic(), checkpoint.createdAt().atOffset(ZoneOffset.UTC),
+                        checkpoint.books().size(), checkpoint.nextOffsets().size()).execute();
+                var books = checkpoint.books().stream().map(book -> {
+                    var payload = codec.encode(book);
+                    return new Object[] {checkpoint.id(), book.instrument(), book.schemaVersion(), payload, checksum(payload)};
+                }).toArray(Object[][]::new);
+                if (books.length > 0) {
+                    context.batch(context.insertInto(BOOKS, CHECKPOINT_ID, INSTRUMENT, SCHEMA_VERSION, PAYLOAD, CHECKSUM)
+                        .values((UUID) null, (String) null, (Integer) null, (byte[]) null, (String) null))
+                        .bind(books).execute();
                 }
-                try (var insert = connection.prepareStatement("INSERT INTO book_snapshots VALUES (?, ?, ?, ?, ?)")) {
-                    for (var book : checkpoint.books()) {
-                        insert.setObject(1, checkpoint.id());
-                        insert.setString(2, book.instrument());
-                        insert.setInt(3, book.schemaVersion());
-                        var payload = codec.encode(book);
-                        insert.setBytes(4, payload);
-                        insert.setString(5, checksum(payload));
-                        insert.addBatch();
-                    }
-                    insert.executeBatch();
+                var offsets = checkpoint.nextOffsets().entrySet().stream().map(offset ->
+                    new Object[] {checkpoint.id(), offset.getKey(), offset.getValue()}).toArray(Object[][]::new);
+                if (offsets.length > 0) {
+                    context.batch(context.insertInto(OFFSETS, CHECKPOINT_ID, PARTITION_ID, NEXT_OFFSET)
+                        .values((UUID) null, (Integer) null, (Long) null)).bind(offsets).execute();
                 }
-                try (var insert = connection.prepareStatement("INSERT INTO book_snapshot_offsets VALUES (?, ?, ?)")) {
-                    for (var offset : checkpoint.nextOffsets().entrySet()) {
-                        insert.setObject(1, checkpoint.id());
-                        insert.setInt(2, offset.getKey());
-                        insert.setLong(3, offset.getValue());
-                        insert.addBatch();
-                    }
-                    insert.executeBatch();
-                }
-                connection.commit();
-            } catch (SQLException | RuntimeException exception) {
-                connection.rollback();
-                throw exception;
-            }
-        } catch (SQLException exception) {
+            });
+        } catch (DataAccessException exception) {
             throw new IllegalStateException("Could not save book snapshot", exception);
         }
     }
 
-    private ArrayList<BookSnapshot> loadBooks(Connection connection, UUID id) throws SQLException {
+    private ArrayList<BookSnapshot> loadBooks(DSLContext context, UUID id) {
         var books = new ArrayList<BookSnapshot>();
-        try (var query = connection.prepareStatement("SELECT instrument, schema_version, payload, checksum FROM book_snapshots WHERE checkpoint_id = ? ORDER BY instrument")) {
-            query.setObject(1, id);
-            try (var rows = query.executeQuery()) {
-                while (rows.next()) {
-                    var payload = rows.getBytes("payload");
-                    if (!checksum(payload).equals(rows.getString("checksum"))) {
-                        throw new InvalidBookSnapshotException("Snapshot checksum mismatch");
-                    }
-                    var book = codec.decode(payload);
-                    if (!book.instrument().equals(rows.getString("instrument")) || book.schemaVersion() != rows.getInt("schema_version")) {
-                        throw new InvalidBookSnapshotException("Snapshot payload and metadata differ");
-                    }
-                    books.add(book);
-                }
+        for (var row : context.select(INSTRUMENT, SCHEMA_VERSION, PAYLOAD, CHECKSUM).from(BOOKS)
+            .where(CHECKPOINT_ID.eq(id)).orderBy(INSTRUMENT).fetch()) {
+            var payload = row.get(PAYLOAD);
+            if (!checksum(payload).equals(row.get(CHECKSUM))) {
+                throw new InvalidBookSnapshotException("Snapshot checksum mismatch");
             }
+            var book = codec.decode(payload);
+            if (!book.instrument().equals(row.get(INSTRUMENT)) || book.schemaVersion() != row.get(SCHEMA_VERSION)) {
+                throw new InvalidBookSnapshotException("Snapshot payload and metadata differ");
+            }
+            books.add(book);
         }
         return books;
     }
 
-    private HashMap<Integer, Long> loadOffsets(Connection connection, UUID id) throws SQLException {
+    private HashMap<Integer, Long> loadOffsets(DSLContext context, UUID id) {
         var offsets = new HashMap<Integer, Long>();
-        try (var query = connection.prepareStatement("SELECT partition_id, next_offset FROM book_snapshot_offsets WHERE checkpoint_id = ?")) {
-            query.setObject(1, id);
-            try (var rows = query.executeQuery()) {
-                while (rows.next()) {
-                    offsets.put(rows.getInt("partition_id"), rows.getLong("next_offset"));
-                }
-            }
+        for (var row : context.select(PARTITION_ID, NEXT_OFFSET).from(OFFSETS).where(CHECKPOINT_ID.eq(id)).fetch()) {
+            offsets.put(row.get(PARTITION_ID), row.get(NEXT_OFFSET));
         }
         return offsets;
-    }
-
-    private Connection connect() throws SQLException {
-        return DriverManager.getConnection(url, username, password);
     }
 
     private static String checksum(byte[] payload) {

@@ -5,6 +5,8 @@ plugins {
 dependencies {
     implementation(project(":shared"))
     implementation(project(":command-log"))
+    implementation("org.jooq:jooq:3.21.9")
+    compileOnly("jakarta.xml.bind:jakarta.xml.bind-api:4.0.2")
     runtimeOnly("org.postgresql:postgresql:42.7.8")
 }
 

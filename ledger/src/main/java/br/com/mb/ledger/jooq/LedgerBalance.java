@@ -1,4 +1,4 @@
-package br.com.mb.ledger.jdbc;
+package br.com.mb.ledger.jooq;
 
 import br.com.mb.ledger.domain.AssetBalance;
 import br.com.mb.ledger.domain.LedgerException;

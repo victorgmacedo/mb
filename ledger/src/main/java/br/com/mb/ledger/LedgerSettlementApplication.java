@@ -2,7 +2,7 @@ package br.com.mb.ledger;
 
 import br.com.mb.commandlog.kafka.KafkaCommandConsumer;
 import br.com.mb.ledger.config.LedgerSettlementConfig;
-import br.com.mb.ledger.jdbc.PostgresLedgerFactory;
+import br.com.mb.ledger.jooq.PostgresLedgerFactory;
 import br.com.mb.ledger.settlement.LedgerSettlementHandler;
 import br.com.mb.shared.logging.LoggingConfig;
 import br.com.mb.shared.logging.StructuredLogger;

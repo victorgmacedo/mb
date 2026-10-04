@@ -12,7 +12,7 @@ import br.com.mb.engine.journal.KafkaBookJournal;
 import br.com.mb.engine.journal.KafkaSettlementJournal;
 import br.com.mb.engine.snapshot.BookRecovery;
 import br.com.mb.engine.snapshot.PostgresBookSnapshotStore;
-import br.com.mb.ledger.jdbc.PostgresLedgerFactory;
+import br.com.mb.ledger.jooq.PostgresLedgerFactory;
 import br.com.mb.shared.logging.LoggingConfig;
 import br.com.mb.shared.logging.StructuredLogger;
 import br.com.mb.shared.logging.TelemetryContext;
