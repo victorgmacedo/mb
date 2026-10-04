@@ -17,3 +17,23 @@ CREATE TABLE IF NOT EXISTS processed_commands (
     payload_hash VARCHAR(64),
     CONSTRAINT uk_processed_command_type_client_order UNIQUE (command_type, client_order_id)
 );
+
+CREATE TABLE IF NOT EXISTS settlement_instructions (
+    id BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+    execution_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('PENDING','APPLIED','FAILED')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS invalid_settlements (
+    id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    partition_id INTEGER NOT NULL,
+    source_offset BIGINT NOT NULL,
+    payload TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

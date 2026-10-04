@@ -36,7 +36,8 @@ public final class BookSnapshotCodec {
             snapshotLevels(book.bidLevels()),
             snapshotLevels(book.askLevels()),
             lastEntrySequence,
-            SCHEMA_VERSION
+            SCHEMA_VERSION,
+            book.lastJournalSequence()
         );
     }
 
@@ -47,6 +48,7 @@ public final class BookSnapshotCodec {
             .addAllAsks(protoLevels(snapshot.asks()))
             .setLastEntrySequence(snapshot.lastEntrySequence())
             .setSchemaVersion(snapshot.schemaVersion())
+            .setLastJournalSequence(snapshot.lastJournalSequence())
             .build();
     }
 
@@ -56,7 +58,8 @@ public final class BookSnapshotCodec {
             snapshotLevelsFromProto(snapshot.getBidsList()),
             snapshotLevelsFromProto(snapshot.getAsksList()),
             snapshot.getLastEntrySequence(),
-            snapshot.getSchemaVersion()
+            snapshot.getSchemaVersion(),
+            snapshot.getLastJournalSequence()
         );
     }
 

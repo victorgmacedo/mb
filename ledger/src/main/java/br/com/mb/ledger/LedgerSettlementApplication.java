@@ -50,7 +50,16 @@ public final class LedgerSettlementApplication {
         );
         try {
             while (!Thread.currentThread().isInterrupted() && !consumer.isStopping()) {
-                consumer.poll(handler);
+                try {
+                    consumer.poll(handler);
+                } catch (br.com.mb.ledger.domain.LedgerException exception) {
+                    LOG.info("ledger.settlement.retry", "reason", exception.getMessage());
+                    try {
+                        Thread.sleep(1_000);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
             }
         } finally {
             try {

@@ -8,6 +8,7 @@ module br.com.mb.engine {
 
     exports br.com.mb.engine.http;
 
+    exports br.com.mb.engine.durable;
     exports br.com.mb.engine;
     exports br.com.mb.engine.book;
     exports br.com.mb.engine.config;

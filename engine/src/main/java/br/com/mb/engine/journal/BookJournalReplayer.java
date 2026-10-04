@@ -12,6 +12,9 @@ import br.com.mb.shared.fix.InvalidFixMessageException;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Objects;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Comparator;
 
 public final class BookJournalReplayer {
 
@@ -30,8 +33,28 @@ public final class BookJournalReplayer {
     public EngineState replay(EngineState state, Iterable<CommandMessage> messages) {
         Objects.requireNonNull(state, "state must not be null");
         Objects.requireNonNull(messages, "messages must not be null");
-        for (var message : messages) {
+        var ordered = new ArrayList<CommandMessage>();
+        messages.forEach(ordered::add);
+        // Outbox publication order spans partitions; poll iteration need not preserve it.
+        if (ordered.stream().allMatch(message -> FixMessage.parse(message.value()).field(10005).isPresent())) {
+            ordered.sort(Comparator.comparingLong(message -> Long.parseLong(FixMessage.parse(message.value()).field(10003).orElseThrow())));
+        }
+        var seen = new HashSet<String>();
+        for (var message : ordered) {
+            var fix = FixMessage.parse(message.value());
+            var deliveryId = fix.field(10005);
+            if (deliveryId.isPresent()) {
+                var sequence = parseLong(required(fix, 10003, "EntrySequence"), "EntrySequence(10003)");
+                var instrument = InstrumentCatalog.defaultCatalog().findBySymbol(required(fix, 55, "Symbol")).orElseThrow();
+                if (sequence <= state.book(instrument).lastJournalSequence() || !seen.add(deliveryId.orElseThrow())) continue;
+            }
             replay(state, message);
+            if (deliveryId.isPresent()) {
+                var sequence = Long.parseLong(fix.field(10003).orElseThrow());
+                state.restoreEntrySequence(sequence);
+                state.book(InstrumentCatalog.defaultCatalog().findBySymbol(fix.field(55).orElseThrow()).orElseThrow())
+                    .advanceJournalSequence(sequence);
+            }
         }
         return state;
     }

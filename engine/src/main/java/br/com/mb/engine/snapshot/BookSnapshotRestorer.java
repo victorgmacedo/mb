@@ -29,7 +29,10 @@ public final class BookSnapshotRestorer {
                 state.restoreEntrySequence(lastSequence);
                 var instrument = InstrumentCatalog.defaultCatalog().findBySymbol(snapshot.instrument())
                     .orElseThrow(() -> new InvalidBookSnapshotException("Unknown snapshot instrument"));
-                state.book(instrument);
+                if (snapshot.lastJournalSequence() < 0 || snapshot.lastJournalSequence() > snapshot.lastEntrySequence()) {
+                    throw new InvalidBookSnapshotException("Invalid journal sequence");
+                }
+                state.book(instrument).advanceJournalSequence(snapshot.lastJournalSequence());
                 restoreLevels(state, snapshot, Side.BUY, snapshot.bids(), sequences);
                 restoreLevels(state, snapshot, Side.SELL, snapshot.asks(), sequences);
             }

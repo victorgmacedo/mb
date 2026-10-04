@@ -201,11 +201,11 @@ def main():
         start("snapshots", once=True)
         stop("engine")
         start("engine")
-        wait_for("snapshot recovery", lambda: [o["clientOrderId"] for o in orders()] == ["resting-buy"], seconds=90)
+        wait_for("durable book recovery", lambda: [o["clientOrderId"] for o in orders()] == ["resting-buy"], seconds=90)
         send("F", "cancel", "A", "55=BTC/BRL|41=resting-buy|")
         expect_balance("A", "BRL", 49999)
         wait_for("cancelled book", lambda: not orders())
-        print("PASS: debit, deduplication, insufficient funds, ownership, self-trade, snapshot recovery and cancellation")
+        print("PASS: debit, deduplication, insufficient funds, ownership, self-trade, durable book recovery and cancellation")
         send("U1", "partial-fund", "B", "55=BTC|38=4|")
         expect_balance("B", "BTC", 4)
         send("D", "partial-sell", "B", "55=BTC/BRL|54=2|44=100|38=4|")
@@ -222,7 +222,7 @@ def main():
         events = run("docker", "exec", "mb-kafka", KAFKA + "kafka-console-consumer.sh", "--bootstrap-server",
                      "localhost:9092", "--topic", topics["events"], "--from-beginning", "--timeout-ms", "5000", check=False)
         (logs / "events.log").write_text(events.stdout)
-        for rejection in ["conflicting duplicate ledger command", "insufficient available balance",
+        for rejection in ["conflicting duplicate command", "insufficient available balance",
                           "order belongs to another account", "self-trade prevented"]:
             assert rejection in events.stdout, "Missing business rejection: " + rejection
         if args.mode == "native":

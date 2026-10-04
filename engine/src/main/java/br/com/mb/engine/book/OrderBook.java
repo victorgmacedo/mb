@@ -16,12 +16,20 @@ import java.util.Optional;
 public final class OrderBook {
 
     private final Instrument instrument;
+    private long lastJournalSequence;
     private final BookSide bids = BookSide.bids();
     private final BookSide asks = BookSide.asks();
     private final Map<ClientOrderId, BookOrder> ordersByClientOrderId = new HashMap<>();
 
     public OrderBook(Instrument instrument) {
         this.instrument = instrument;
+    }
+
+    public long lastJournalSequence() { return lastJournalSequence; }
+
+    public void advanceJournalSequence(long sequence) {
+        if (sequence < lastJournalSequence) throw new IllegalArgumentException("Journal sequence regressed");
+        lastJournalSequence = sequence;
     }
 
     public void add(Order order) {

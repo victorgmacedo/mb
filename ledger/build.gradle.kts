@@ -17,6 +17,13 @@ tasks.register<JavaExec>("runLedgerSettlements") {
     classpath = sourceSets.main.get().runtimeClasspath
 }
 
+tasks.register<JavaExec>("runLedgerReconciliation") {
+    group = "application"
+    description = "Retries durable pending settlement instructions, independently of Kafka."
+    mainClass.set("br.com.mb.ledger.LedgerReconciliationApplication")
+    classpath = sourceSets.main.get().runtimeClasspath
+}
+
 // Native builds are optional; ordinary JVM tests do not require GraalVM.
 graalvmNative {
     toolchainDetection.set(false)

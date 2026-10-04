@@ -40,11 +40,68 @@ public final class JooqLedger implements Ledger {
     private final String url;
     private final String username;
     private final String password;
+    private final DSLContext boundTransaction;
 
     public JooqLedger(String url, String username, String password) {
         this.url = Objects.requireNonNull(url);
         this.username = Objects.requireNonNull(username);
         this.password = Objects.requireNonNull(password);
+        this.boundTransaction = null;
+    }
+
+    private JooqLedger(DSLContext context) {
+        this.url = null;
+        this.username = null;
+        this.password = null;
+        this.boundTransaction = Objects.requireNonNull(context);
+    }
+
+    /** Operations on this ledger join the caller's transaction; it must not escape that transaction. */
+    public static JooqLedger participatingIn(DSLContext context) {
+        return new JooqLedger(context);
+    }
+
+    public <T> T atomic(Function<DSLContext, T> work) {
+        return transaction(work);
+    }
+
+    /** Failure status commits separately from rolled-back settlement effects; callers must retry failures. */
+    public void applyInstruction(String executionId, String payload, Consumer<Ledger> work) {
+        var failure = transaction(db -> {
+            db.execute("INSERT INTO settlement_instructions(execution_id,payload,status) VALUES(?,?,'PENDING') ON CONFLICT(execution_id) DO NOTHING",
+                executionId, payload);
+            var instruction = db.fetchOne("SELECT payload,status FROM settlement_instructions WHERE execution_id=? FOR UPDATE", executionId);
+            if (!payload.equals(instruction.get(0, String.class))) return "conflicting duplicate settlement instruction";
+            if ("APPLIED".equals(instruction.get(1, String.class))) return null;
+            db.execute("SAVEPOINT settlement_effects");
+            String error = null;
+            try {
+                work.accept(participatingIn(db));
+            } catch (LedgerException exception) {
+                db.execute("ROLLBACK TO SAVEPOINT settlement_effects");
+                error = exception.getMessage();
+            }
+            db.execute("RELEASE SAVEPOINT settlement_effects");
+            db.execute("UPDATE settlement_instructions SET status=?,attempts=attempts+1,last_error=?,updated_at=CURRENT_TIMESTAMP WHERE execution_id=?",
+                error == null ? "APPLIED" : "FAILED", error, executionId);
+            return error;
+        });
+        if (failure != null) throw new LedgerException(failure);
+    }
+
+    public void quarantineSettlement(br.com.mb.commandlog.CommandMessage message, String reason) {
+        transaction(db -> {
+            db.execute("INSERT INTO invalid_settlements(id,topic,partition_id,source_offset,payload,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+                sha256(message.topic() + "|" + message.partition() + "|" + message.offset() + "|" + message.value()),
+                message.topic(), message.partition(), message.offset(), message.value(), reason);
+            return null;
+        });
+    }
+
+    public List<String> pendingInstructions(int limit) {
+        if (limit < 1) throw new IllegalArgumentException("limit must be positive");
+        return transaction(db -> db.fetch("SELECT payload FROM settlement_instructions WHERE status <> 'APPLIED' ORDER BY id LIMIT ?", limit)
+            .stream().map(row -> row.get(0, String.class)).toList());
     }
 
     public void initialize() {
@@ -214,6 +271,7 @@ public final class JooqLedger implements Ledger {
     }
 
     private <T> T transaction(Function<DSLContext, T> work) {
+        if (boundTransaction != null) return work.apply(boundTransaction);
         try (var database = JooqDatabase.open(url, username, password)) {
             return database.transactionResult(configuration -> {
                 var context = configuration.dsl();
