@@ -5,14 +5,17 @@ import br.com.mb.commandlog.CommandPublisher;
 import br.com.mb.engine.command.EngineCommandHandler;
 import br.com.mb.engine.command.EngineCommandResult;
 import br.com.mb.engine.command.EngineEventFactory;
-import br.com.mb.engine.domain.InstrumentCatalog;
+import br.com.mb.engine.domain.ClientOrderId;
 import br.com.mb.engine.domain.EngineState;
+import br.com.mb.engine.domain.InstrumentCatalog;
 import br.com.mb.engine.journal.KafkaBookJournal;
 import br.com.mb.engine.journal.KafkaSettlementJournal;
 import br.com.mb.engine.snapshot.BookSnapshotCodec;
 import br.com.mb.engine.snapshot.BookSnapshotRestorer;
 import br.com.mb.ledger.jooq.JooqLedger;
 import br.com.mb.shared.fix.FixMessage;
+import br.com.mb.shared.fix.InvalidFixMessageException;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -51,7 +54,7 @@ public final class DurableEngineStore {
                 for (var sql : new String(input.readAllBytes(), StandardCharsets.UTF_8).split(";")) {
                     if (!sql.isBlank()) db.execute(sql);
                 }
-            } catch (java.io.IOException exception) {
+            } catch (IOException exception) {
                 throw new IllegalStateException("Could not read engine durable schema", exception);
             }
             db.execute("INSERT INTO engine_state_guard(id,initialized,last_sequence) VALUES(1,false,0) ON CONFLICT(id) DO NOTHING");
@@ -118,82 +121,157 @@ public final class DurableEngineStore {
     public record Applied(EngineState state, String result, boolean duplicate) {}
 
     public Applied apply(CommandMessage message) {
+        validateSource(message);
+        return ledger.atomic(db -> applyInTransaction(db, message));
+    }
+
+    private Applied applyInTransaction(DSLContext db, CommandMessage message) {
+        lock(db);
+        requireBootstrapped(db);
+        fence(db, message.partition());
+
+        var previous = findBySource(db, message);
+        if (previous != null) return recoverSourceDuplicate(db, message, previous);
+
+        var businessId = businessId(message);
+        var business = findByBusinessId(db, businessId);
+        if (business != null && business.matches(message)) {
+            recordDuplicate(db, message, business);
+            return new Applied(loadState(db), business.result(), true);
+        }
+
+        var execution = executeCommand(db, message, businessId, business);
+        var decision = UUID.randomUUID().toString();
+        recordDecision(db, message, decision, business == null ? businessId : null, execution.result());
+        persistOutputs(db, decision, execution);
+        if (execution.result().accepted()) saveState(db, execution.state());
+        return new Applied(execution.state(), execution.result().line(), false);
+    }
+
+    private void validateSource(CommandMessage message) {
         if (!commandsTopic.equals(message.topic()) || message.partition() < 0 || message.offset() < 0) {
             throw new IllegalArgumentException("Durable commands require source topic, partition and offset");
         }
-        return ledger.atomic(db -> {
-            lock(db);
-            if (!db.fetchOne("SELECT initialized FROM engine_state_guard WHERE id=1").get(0, Boolean.class)) {
-                throw new IllegalStateException("Durable engine must be bootstrapped before processing commands");
-            }
-            fence(db, message.partition());
-            var previous = db.fetchOne("SELECT payload,result,message_key FROM engine_commands WHERE topic=? AND partition_id=? AND source_offset=?",
-                message.topic(), message.partition(), message.offset());
-            if (previous != null) {
-                if (!message.value().equals(previous.get(0, String.class)) || !message.key().equals(previous.get(2, String.class))) throw new IllegalStateException("Source offset payload changed");
-                return new Applied(loadState(db), previous.get(1, String.class), true);
-            }
-            var businessId = businessId(message);
-            var business = businessId == null ? null : db.fetchOne("SELECT payload,result,id,message_key FROM engine_commands WHERE business_id=?", businessId);
-            if (business != null && message.value().equals(business.get(0, String.class)) && message.key().equals(business.get(3, String.class))) {
-                db.execute("INSERT INTO engine_commands(id,topic,partition_id,source_offset,message_key,payload,status,result,owner_epoch,duplicate_of) VALUES(?,?,?,?,?,?,'DUPLICATE',?,?,?)",
-                    UUID.randomUUID().toString(), message.topic(), message.partition(), message.offset(), message.key(), message.value(),
-                    business.get(1, String.class), epochs.get(message.partition()), business.get(2, String.class));
-                return new Applied(loadState(db), business.get(1, String.class), true);
-            }
-            var state = loadState(db);
-            var outputs = new ArrayList<CommandMessage>();
-            var collector = new CommandPublisher() {
-                public void publish(CommandMessage output) { outputs.add(output); }
-                public void close() {}
-            };
-            var handler = new EngineCommandHandler(collector, eventsTopic, ignored -> {}, JooqLedger.participatingIn(db),
-                new KafkaSettlementJournal(collector, settlementsTopic), new KafkaBookJournal(collector, journalTopic), state);
-            db.execute("SAVEPOINT engine_command_effects");
-            var routingError = routingError(message, state);
-            var legacyDuplicate = businessId != null && businessId.startsWith("D:")
-                && db.fetchOne("SELECT client_order_id FROM engine_legacy_order_ids WHERE client_order_id=?", businessId.substring(2)) != null;
-            var rejection = business != null ? "conflicting duplicate command"
-                : legacyDuplicate ? "legacy order already accepted; reconcile its original result" : routingError;
-            var result = rejection != null
-                ? EngineCommandResult.rejected(message.key(), rejection, new EngineEventFactory().rejected(message.key(), rejection))
-                : handler.classify(message);
-            if (!result.accepted()) {
-                db.execute("ROLLBACK TO SAVEPOINT engine_command_effects");
-                state = loadState(db);
-                outputs.clear();
-            }
-            db.execute("RELEASE SAVEPOINT engine_command_effects");
-            for (var event : result.eventFixMessages()) outputs.add(new CommandMessage(eventsTopic, message.key(), event));
-            var decision = UUID.randomUUID().toString();
-            db.execute("INSERT INTO engine_commands(id,topic,partition_id,source_offset,message_key,business_id,payload,status,result,owner_epoch) VALUES(?,?,?,?,?,?,?,?,?,?)",
-                decision, message.topic(), message.partition(), message.offset(), message.key(), business == null ? businessId : null,
-                message.value(), result.accepted() ? "APPLIED" : "REJECTED", result.line(), epochs.get(message.partition()));
-            var index = 0;
-            for (var output : outputs) {
-                var outputId = decision + ":" + index++;
-                var value = output.value();
-                if (output.topic().equals(journalTopic)) {
-                    // Cancel mutations also consume a sequence, so snapshots can discard repeated delivery.
-                    if (FixMessage.parse(value).field(35).orElseThrow().equals("U5")) {
-                        value += "10003=" + state.nextEntrySequence() + FixMessage.SOH;
-                    }
-                    var fix = FixMessage.parse(value);
-                    state.book(InstrumentCatalog.defaultCatalog().findBySymbol(fix.field(55).orElseThrow()).orElseThrow())
-                        .advanceJournalSequence(Long.parseLong(fix.field(10003).orElseThrow()));
-                }
-                value += "10005=" + outputId + FixMessage.SOH;
-                db.execute("INSERT INTO engine_outbox(message_id,topic,message_key,payload) VALUES(?,?,?,?)",
-                    outputId, output.topic(), output.key(), value);
-                if (output.topic().equals(settlementsTopic)) {
-                    var executionId = FixMessage.parse(value).field(17).orElseThrow();
-                    db.execute("INSERT INTO settlement_instructions(execution_id,payload,status) VALUES(?,?,'PENDING') ON CONFLICT(execution_id) DO NOTHING",
-                        executionId, value);
-                }
-            }
-            if (result.accepted()) saveState(db, state);
-            return new Applied(state, result.line(), false);
-        });
+    }
+
+    private void requireBootstrapped(DSLContext db) {
+        if (!db.fetchOne("SELECT initialized FROM engine_state_guard WHERE id=1").get(0, Boolean.class)) {
+            throw new IllegalStateException("Durable engine must be bootstrapped before processing commands");
+        }
+    }
+
+    private record StoredCommand(String id, String payload, String result, String key) {
+        boolean matches(CommandMessage message) {
+            return payload.equals(message.value()) && key.equals(message.key());
+        }
+    }
+
+    private StoredCommand findBySource(DSLContext db, CommandMessage message) {
+        var row = db.fetchOne("SELECT id,payload,result,message_key FROM engine_commands WHERE topic=? AND partition_id=? AND source_offset=?",
+            message.topic(), message.partition(), message.offset());
+        return row == null ? null : new StoredCommand(row.get(0, String.class), row.get(1, String.class),
+            row.get(2, String.class), row.get(3, String.class));
+    }
+
+    private StoredCommand findByBusinessId(DSLContext db, String businessId) {
+        if (businessId == null) return null;
+        var row = db.fetchOne("SELECT id,payload,result,message_key FROM engine_commands WHERE business_id=?", businessId);
+        return row == null ? null : new StoredCommand(row.get(0, String.class), row.get(1, String.class),
+            row.get(2, String.class), row.get(3, String.class));
+    }
+
+    private Applied recoverSourceDuplicate(DSLContext db, CommandMessage message, StoredCommand previous) {
+        if (!previous.matches(message)) throw new IllegalStateException("Source offset payload changed");
+        return new Applied(loadState(db), previous.result(), true);
+    }
+
+    private void recordDuplicate(DSLContext db, CommandMessage message, StoredCommand original) {
+        db.execute("INSERT INTO engine_commands(id,topic,partition_id,source_offset,message_key,payload,status,result,owner_epoch,duplicate_of) VALUES(?,?,?,?,?,?,'DUPLICATE',?,?,?)",
+            UUID.randomUUID().toString(), message.topic(), message.partition(), message.offset(), message.key(), message.value(),
+            original.result(), epochs.get(message.partition()), original.id());
+    }
+
+    private record CommandExecution(EngineState state, EngineCommandResult result, List<CommandMessage> outputs) {}
+
+    private CommandExecution executeCommand(DSLContext db, CommandMessage message, String businessId, StoredCommand business) {
+        // A local view may lag other owners. Calculate against a fresh private copy under the global guard.
+        var state = loadState(db);
+        var outputs = new ArrayList<CommandMessage>();
+        var handler = createCommandHandler(db, state, outputs);
+        db.execute("SAVEPOINT engine_command_effects");
+        var rejection = rejectionReason(db, message, state, businessId, business);
+        var result = rejection != null
+            ? EngineCommandResult.rejected(message.key(), rejection, new EngineEventFactory().rejected(message.key(), rejection))
+            : handler.classify(message);
+        if (!result.accepted()) {
+            db.execute("ROLLBACK TO SAVEPOINT engine_command_effects");
+            // SQL rollback cannot undo mutations to Java objects or collected messages.
+            state = loadState(db);
+            outputs.clear();
+        }
+        db.execute("RELEASE SAVEPOINT engine_command_effects");
+        for (var event : result.eventFixMessages()) outputs.add(new CommandMessage(eventsTopic, message.key(), event));
+        return new CommandExecution(state, result, outputs);
+    }
+
+    private EngineCommandHandler createCommandHandler(DSLContext db, EngineState state, List<CommandMessage> outputs) {
+        var collector = new CommandPublisher() {
+            public void publish(CommandMessage output) { outputs.add(output); }
+            public void close() {}
+        };
+        return new EngineCommandHandler(collector, eventsTopic, ignored -> {}, JooqLedger.participatingIn(db),
+            new KafkaSettlementJournal(collector, settlementsTopic), new KafkaBookJournal(collector, journalTopic), state);
+    }
+
+    private String rejectionReason(DSLContext db, CommandMessage message, EngineState state,
+                                   String businessId, StoredCommand business) {
+        var routingError = routingError(message, state);
+        var legacyDuplicate = businessId != null && businessId.startsWith("D:")
+            && db.fetchOne("SELECT client_order_id FROM engine_legacy_order_ids WHERE client_order_id=?", businessId.substring(2)) != null;
+        if (business != null) return "conflicting duplicate command";
+        if (legacyDuplicate) return "legacy order already accepted; reconcile its original result";
+        return routingError;
+    }
+
+    private void recordDecision(DSLContext db, CommandMessage message, String decision,
+                                String businessId, EngineCommandResult result) {
+        db.execute("INSERT INTO engine_commands(id,topic,partition_id,source_offset,message_key,business_id,payload,status,result,owner_epoch) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            decision, message.topic(), message.partition(), message.offset(), message.key(), businessId,
+            message.value(), result.accepted() ? "APPLIED" : "REJECTED", result.line(), epochs.get(message.partition()));
+    }
+
+    private void persistOutputs(DSLContext db, String decision, CommandExecution execution) {
+        var index = 0;
+        for (var output : execution.outputs()) {
+            var outputId = decision + ":" + index++;
+            var value = prepareOutput(output, outputId, execution.state());
+            db.execute("INSERT INTO engine_outbox(message_id,topic,message_key,payload) VALUES(?,?,?,?)",
+                outputId, output.topic(), output.key(), value);
+            if (output.topic().equals(settlementsTopic)) recordSettlementInstruction(db, value);
+        }
+    }
+
+    private String prepareOutput(CommandMessage output, String outputId, EngineState state) {
+        var value = output.value();
+        if (output.topic().equals(journalTopic)) value = sequenceJournalMutation(value, state);
+        return value + "10005=" + outputId + FixMessage.SOH;
+    }
+
+    private String sequenceJournalMutation(String value, EngineState state) {
+        // Cancel mutations also consume a sequence, so snapshots can discard repeated delivery.
+        if (FixMessage.parse(value).field(35).orElseThrow().equals("U5")) {
+            value += "10003=" + state.nextEntrySequence() + FixMessage.SOH;
+        }
+        var fix = FixMessage.parse(value);
+        var instrument = InstrumentCatalog.defaultCatalog().findBySymbol(fix.field(55).orElseThrow()).orElseThrow();
+        state.book(instrument).advanceJournalSequence(Long.parseLong(fix.field(10003).orElseThrow()));
+        return value;
+    }
+
+    private void recordSettlementInstruction(DSLContext db, String value) {
+        var executionId = FixMessage.parse(value).field(17).orElseThrow();
+        db.execute("INSERT INTO settlement_instructions(execution_id,payload,status) VALUES(?,?,'PENDING') ON CONFLICT(execution_id) DO NOTHING",
+            executionId, value);
     }
 
     /** One global publisher lock preserves decision order, including during publisher failover. */
@@ -247,14 +325,14 @@ public final class DurableEngineStore {
             if (fix.field(35).orElseThrow().equals("F")) {
                 var originalId = fix.field(41).orElse("");
                 if (!originalId.isBlank()) {
-                    var order = state.openOrder(new br.com.mb.engine.domain.ClientOrderId(originalId));
+                    var order = state.openOrder(new ClientOrderId(originalId));
                     if (order.isPresent() && !order.orElseThrow().instrument().symbol().equals(message.key())) {
                         return "cancel instrument differs from original order";
                     }
                 }
             }
             return null;
-        } catch (br.com.mb.shared.fix.InvalidFixMessageException exception) {
+        } catch (InvalidFixMessageException exception) {
             return null; // The command classifier persists the protocol rejection.
         }
     }
@@ -264,7 +342,7 @@ public final class DurableEngineStore {
             var fix = FixMessage.parse(message.value());
             // Current engine and settlement IDs are globally scoped by ClOrdID.
             return fix.field(11).map(id -> fix.field(35).orElseThrow() + ":" + id).orElse(null);
-        } catch (br.com.mb.shared.fix.InvalidFixMessageException exception) {
+        } catch (InvalidFixMessageException exception) {
             return null;
         }
     }
