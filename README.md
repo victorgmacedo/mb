@@ -2,7 +2,7 @@
 
 Implementação modular em Java 25 de um CLOB simplificado para ordens limitadas. Cobre inserção, cancelamento, matching e transferência de ativos, além de crédito, débito e consultas de saldo e book por HTTP.
 
-O projeto usa biblioteca padrão para HTTP, concorrência e JDBC. Kafka mantém os logs; PostgreSQL persiste saldos, idempotência e checkpoints; Protobuf codifica snapshots. Não usa Spring, JPA ou Hibernate.
+O projeto usa biblioteca padrão para HTTP e concorrência, e jOOQ para acesso ao banco. Kafka mantém os logs; PostgreSQL persiste saldos, decisões do engine, outbox, idempotência e checkpoints; Protobuf codifica snapshots. Não usa Spring, JPA ou Hibernate.
 
 ## Compilar e testar
 
@@ -29,7 +29,7 @@ Com Kafka e PostgreSQL saudáveis, execute:
 python3 scripts/verify-exercise.py
 ```
 
-O script cria tópicos e schema exclusivos, inicia os serviços em portas disponíveis, verifica crédito/débito idempotentes, o exemplo de 1 BTC por 500 mil BRL, saldo reservado, matching parcial, preço do maker, cancelamento, rejeições e recovery de snapshot. Remove seus serviços e dados ao terminar. Os logs ficam em `build/verify_*`.
+O script cria tópicos e schema exclusivos, inicia os serviços em portas disponíveis, verifica crédito/débito idempotentes, o exemplo de 1 BTC por 500 mil BRL, saldo reservado, matching parcial, preço do maker, cancelamento, rejeições, projeção de snapshots e recovery do book durável. Remove seus serviços e dados ao terminar. Os logs ficam em `build/verify_*`.
 
 ## Executar os serviços manualmente
 
@@ -115,7 +115,7 @@ Build e configuração em [docs/NATIVE.md](docs/NATIVE.md).
 - Matching usa prioridade preço-tempo e preço do maker. A quantidade executada sai de ambas as ordens; a parte restante pode descansar no book.
 - Compras reservam preço-limite × quantidade na cotação; vendas reservam quantidade no ativo base. Cancelamentos liberam o restante e compras com melhoria de preço recebem a diferença.
 - Uma ordem que alcançaria contraparte da mesma conta é rejeitada integralmente antes de reservar saldo ou executar trades.
-- O ambiente demonstrativo usa uma partição e um engine ativo. Replicação e fencing não estão implementados.
-- As transações JDBC garantem atomicidade no ledger. Book, Kafka e ledger não formam uma transação distribuída; reconciliação de falhas entre esses componentes continua sendo evolução de produção.
+- O ambiente demonstrativo usa uma partição. Ownership/fencing por partição e decisões duráveis estão implementados; o processamento usa bloqueio global no PostgreSQL e ainda não escala linearmente por instrumento. Veja [consistência e migração](docs/ENGINE-CONSISTENCY.md).
+- As transações jOOQ garantem atomicidade no ledger. Book, Kafka e ledger não formam uma transação distribuída; reconciliação de falhas entre esses componentes continua sendo evolução de produção.
 
 Arquitetura em [docs/DESIGN.md](docs/DESIGN.md), operação em [docs/RUNBOOK.md](docs/RUNBOOK.md), checkpoints em [docs/BOOK-SNAPSHOTS.md](docs/BOOK-SNAPSHOTS.md) e responsabilidades de todas as classes de produção em [docs/CLASS-FLOWS.md](docs/CLASS-FLOWS.md). Documentos em `docs/superpowers` registram decisões históricas; não substituem estas instruções atuais.

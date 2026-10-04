@@ -17,7 +17,7 @@ Módulos:
 - `command-log`: adapters Kafka para produzir e consumir comandos/eventos.
 - `gateway`: entrada HTTP que aceita FIX textual e publica FIX normalizado no Kafka `commands`.
 - `engine`: recupera book via `book-journal`, consome comandos FIX, credita funding, valida intake, reserva saldo no ledger, mantém order books em memória, executa matching básico, publica journal de liquidação em Kafka, publica eventos FIX e possui codec Protobuf para snapshots binários.
-- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via JDBC.
+- `ledger`: domínio de saldos com `available`, `locked`, reserva, liberação e consumo assíncrono de liquidação persistido em PostgreSQL via jOOQ.
 
 O pacote base padrão é `br.com.mb`.
 
@@ -50,7 +50,10 @@ flowchart LR
 - Persiste mutações aceitas do book no tópico `book-journal`: `35=U4` para ordem aceita e `35=U5` para cancelamento aceito.
 - Cada ordem aceita recebe `entrySequence` monotônico, publicado em `U4` como tag interna `10003`.
 - Cada ordem aceita recebe `enteredAt` em ISO-8601/UTC, publicado em `U4` como tag interna `10004` para auditoria.
-- No startup, o engine reconstrói `EngineState` por replay de `book-journal`.
+- O runtime recupera `EngineState` de `engine_durable_books` no PostgreSQL; snapshot/journal Kafka permanecem como projeção.
+- Decisão, saldo, book, instruções de liquidação e outbox compartilham uma transação PostgreSQL; duplicatas por offset e MsgType/ClOrdID não repetem efeitos.
+- Ownership usa o consumer group e epoch persistido por partição; fencing é validado sob o mesmo bloqueio da transação.
+- A versão atual restaura/persiste todos os books por comando e serializa decisões com bloqueio global. Limites e migração: `docs/ENGINE-CONSISTENCY.md`.
 - Publica cada trade no tópico `settlements` como FIX-like `35=U2`.
 - Compra taker executada abaixo do preço limite publica liberação de price improvement como FIX-like `35=U3`.
 - Publica FIX `ExecutionReport(35=8)` para ordens aceitas/descansando, fills e cancelamentos.
@@ -61,9 +64,9 @@ flowchart LR
 
 ## Comportamento Atual do Ledger
 
-- O runtime padrão usa `PostgresLedgerFactory` e `JdbcLedger`.
+- O runtime padrão usa `PostgresLedgerFactory` e `JooqLedger`.
 - Persistência em PostgreSQL na tabela `ledger_balances`.
-- Usa JDBC PostgreSQL com schema explícito e transações READ COMMITTED, sem Spring/JPA/Hibernate.
+- Usa jOOQ sobre o driver PostgreSQL com schema explícito e transações READ COMMITTED, sem Spring/JPA/Hibernate.
 - Configuração padrão local: `jdbc:postgresql://localhost:5432/mb`, usuário `mb`, senha `mb`.
 - Variáveis suportadas: `MB_LEDGER_JDBC_URL`, `MB_LEDGER_USERNAME`, `MB_LEDGER_PASSWORD`, `MB_LEDGER_INITIALIZE_SCHEMA`.
 - Mantém `AssetBalance` por conta/ativo com buckets `available` e `locked`.
@@ -73,6 +76,8 @@ flowchart LR
 - `settle` liquida trades consumindo saldos bloqueados conforme o lado do maker.
 - O ledger valida todos os saldos bloqueados necessários antes de mutar contas na liquidação.
 - `LedgerSettlementApplication` consome `settlements` e aplica `U2/U3` idempotentemente usando `ExecID(17)`.
+- `settlement_instructions` registra PENDING/APPLIED/FAILED; falhas financeiras rebobinam o lote e recebem retry. FIX inválido é persistido em `invalid_settlements`.
+- `runLedgerReconciliation` aplica instruções pendentes diretamente do banco; suporta `--args=--once`.
 
 ## Comandos Importantes
 
@@ -104,9 +109,8 @@ Manter commits pequenos e temáticos. Exemplos existentes:
   - definir compactação/retenção segura do `book-journal`
   - definir limpeza de checkpoints antigos e persistir identidade/epoch do tópico para detectar recriação
 - consistência engine/ledger:
-  - reconciliar liquidações rejeitadas pelo consumidor
-  - criar persistência de eventos/instruções de liquidação com status
-  - definir política de retry, DLQ e compensação
+  - definir compensação e tratamento operacional de falhas financeiras permanentes
+  - definir retenção da outbox e dos registros de idempotência
   - verificar consistência entre book recuperado e saldos `locked`
 - matching mais completo:
   - avaliar suporte a market, IOC, FOK e post-only
@@ -119,8 +123,8 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 - escala por instrumento:
   - definir particionamento Kafka por instrumento
   - garantir ownership de instrumento por pod
-  - implementar rebalance/recover quando um pod cai
-  - impedir que dois engines processem o mesmo instrumento ao mesmo tempo
+  - substituir bloqueio global e cópia de todos os books por processamento independente por instrumento/partição
+  - validar failover com brokers Kafka e pods reais
 - persistência operacional:
   - migrations com Flyway ou Liquibase
   - schema explícito para ledger e snapshots
@@ -148,4 +152,4 @@ Manter commits pequenos e temáticos. Exemplos existentes:
 
 ## Próximo Trabalho Provável
 
-A próxima implementação recomendada é melhorar a consistência engine/ledger: persistir o status das instruções de liquidação e definir retry/reconciliação de settlements rejeitados. Snapshots e recovery incremental já estão implementados; configuração e limites estão em `docs/BOOK-SNAPSHOTS.md`.
+A próxima evolução é remover o bloqueio global, definir identidade/epoch dos tópicos e validar failover end-to-end com Kafka/pods reais. Decisões duráveis, outbox, fencing e status/reconciliação financeira estão em `docs/ENGINE-CONSISTENCY.md`; snapshots de projeção em `docs/BOOK-SNAPSHOTS.md`.
