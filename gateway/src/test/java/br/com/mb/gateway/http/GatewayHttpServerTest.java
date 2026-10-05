@@ -41,6 +41,14 @@ class GatewayHttpServerTest {
         gateway.start();
         try (var client = HttpClient.newHttpClient()) {
             var base = "http://127.0.0.1:" + gateway.port();
+            var dashboard = get(client, base + "/");
+            assertEquals(200, dashboard.statusCode());
+            assertTrue(dashboard.headers().firstValue("Content-Type").orElseThrow().contains("text/html"));
+            assertTrue(dashboard.body().contains("Enviar comando"));
+            assertEquals(200, get(client, base + "/app.js").statusCode());
+            assertEquals(200, get(client, base + "/style.css").statusCode());
+            assertEquals(404, get(client, base + "/missing").statusCode());
+            assertEquals(404, get(client, base + "/dashboard/../README.md").statusCode());
             var balance = get(client, base + "/accounts/A/balances?asset=BRL");
             assertEquals(200, balance.statusCode());
             assertTrue(balance.body().contains("\"total\":14"));

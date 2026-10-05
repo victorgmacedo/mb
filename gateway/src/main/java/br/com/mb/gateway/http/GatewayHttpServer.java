@@ -30,6 +30,7 @@ public final class GatewayHttpServer {
     public void start() {
         try {
             server = HttpServer.create(new InetSocketAddress(config.host(), config.port()), 0);
+            server.createContext("/", new DashboardHandler());
             server.createContext("/commands", new PublishCommandHandler(config.commandsTopic(), publisher));
             var queries = new QueryHandler(engineUrl, client);
             server.createContext("/accounts/", queries);
