@@ -1,5 +1,6 @@
-package br.com.mb.engine.command;
+package br.com.mb.engine.command.strategy;
 
+import br.com.mb.engine.command.EngineCommand;
 import java.util.List;
 
 /** Executes one command flow and returns its FIX events; transaction and delivery belong to the caller. */

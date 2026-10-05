@@ -1,5 +1,10 @@
 package br.com.mb.engine.command;
 
+import br.com.mb.engine.command.strategy.CancelOrderStrategy;
+import br.com.mb.engine.command.strategy.EngineCommandStrategy;
+import br.com.mb.engine.command.strategy.FundingCreditStrategy;
+import br.com.mb.engine.command.strategy.FundingDebitStrategy;
+import br.com.mb.engine.command.strategy.NewOrderSingleStrategy;
 import br.com.mb.commandlog.CommandHandler;
 import br.com.mb.commandlog.CommandMessage;
 import br.com.mb.commandlog.CommandPublisher;

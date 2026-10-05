@@ -1,5 +1,7 @@
-package br.com.mb.engine.command;
+package br.com.mb.engine.command.strategy;
 
+import br.com.mb.engine.command.EngineEventFactory;
+import br.com.mb.engine.command.NewOrderSingleCommand;
 import br.com.mb.engine.domain.EngineState;
 import br.com.mb.engine.domain.OrderIntake;
 import br.com.mb.engine.ledger.BalanceReservations;
