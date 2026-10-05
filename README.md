@@ -21,7 +21,19 @@ Pré-requisito: JDK 25. O Gradle Wrapper está versionado, e a toolchain pode se
 rtk ./gradlew clean test
 ```
 
-## Executar
+## Executar com Make
+
+Pré-requisitos: JDK 25 (ou superior compatível), Docker com Compose, Python 3, Make e `rtk`. Docker deve estar em execução.
+
+```bash
+rtk make run
+```
+
+Compila, inicia Kafka, cria os tópicos, espera o engine ficar pronto e sobe o gateway. Abra **http://localhost:8080/**. Os logs aparecem no terminal; **Ctrl+C** encerra engine e gateway e apaga o estado em memória. Kafka continua ativo; `rtk make stop` para o broker sem remover seus dados.
+
+`rtk make help` lista os comandos; `rtk make test` roda os testes e `rtk make verify` roda a verificação ponta a ponta. `make engine` e `make gateway` permitem executar cada serviço em seu próprio terminal. Variáveis de ambiente da tabela de configuração são respeitadas; para escolher outro JDK, configure `JAVA_HOME`.
+
+## Executar manualmente
 
 Para execução completa, use Docker com Compose para subir **apenas Kafka**:
 
@@ -37,6 +49,14 @@ rtk ./gradlew :gateway:runGateway
 ```
 
 O gateway atende em `http://localhost:8080`; as consultas internas do engine ficam em `http://127.0.0.1:8081`. Execute **um engine ativo** e mantenha **uma partição de commands**. O startup recusa tópicos commands com outra quantidade de partições.
+
+## Console web
+
+Abra **http://localhost:8080/** com Kafka, engine e gateway em execução. A tela consulta os saldos de BRL/BTC/ETH das contas informadas (separadas por vírgula), mostra ordens de compra/venda do instrumento selecionado e envia FIX para `/commands`. Atualização automática a cada dois segundos, com opção manual.
+
+Os exemplos abaixo do input preenchem o comando sem enviar e geram um `ClOrdID` novo a cada seleção. Para repetir o mesmo pedido, reenvie o conteúdo sem selecionar outro exemplo. Execute os créditos antes das ordens; o exemplo de cancelamento usa o ID da última compra a 100 publicada nesta tela. É possível editar qualquer tag antes de enviar. O histórico guarda apenas os últimos 20 envios enquanto a página está aberta.
+
+HTTP 202 confirma publicação, e não aceitação pelo engine; rejeições continuam no tópico `events`. Consultas de saldo e book são independentes e podem refletir momentos distintos. O frontend é HTML/CSS/JavaScript servido pelo próprio gateway, sem dependências ou processo adicional.
 
 ## Verificação automatizada
 
