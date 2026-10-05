@@ -18,34 +18,34 @@ flowchart LR
 Pré-requisito: JDK 25. O Gradle Wrapper está versionado, e a toolchain pode ser provisionada pelo resolver Foojay. Testes unitários e HTTP não exigem Kafka ou banco.
 
 ```bash
-rtk ./gradlew clean test
+./gradlew clean test
 ```
 
 ## Executar com Make
 
-Pré-requisitos: JDK 25 (ou superior compatível), Docker com Compose, Python 3, Make e `rtk`. Docker deve estar em execução.
+Pré-requisitos: JDK 25 (ou superior compatível), Docker com Compose, Python 3 e Make. Docker deve estar em execução.
 
 ```bash
-rtk make run
+make run
 ```
 
-Compila, inicia Kafka, cria os tópicos, espera o engine ficar pronto e sobe o gateway. Abra **http://localhost:8080/**. Os logs aparecem no terminal; **Ctrl+C** encerra engine e gateway e apaga o estado em memória. Kafka continua ativo; `rtk make stop` para o broker sem remover seus dados.
+Compila, inicia Kafka, cria os tópicos, espera o engine ficar pronto e sobe o gateway. Abra **http://localhost:8080/**. Os logs aparecem no terminal; **Ctrl+C** encerra engine e gateway e apaga o estado em memória. Kafka continua ativo; `make stop` para o broker sem remover seus dados.
 
-`rtk make help` lista os comandos; `rtk make test` roda os testes e `rtk make verify` roda a verificação ponta a ponta. `make engine` e `make gateway` permitem executar cada serviço em seu próprio terminal. Variáveis de ambiente da tabela de configuração são respeitadas; para escolher outro JDK, configure `JAVA_HOME`.
+`make help` lista os comandos; `make test` roda os testes e `make verify` roda a verificação ponta a ponta. `make engine` e `make gateway` permitem executar cada serviço em seu próprio terminal. Variáveis de ambiente da tabela de configuração são respeitadas; para escolher outro JDK, configure `JAVA_HOME`.
 
 ## Executar manualmente
 
 Para execução completa, use Docker com Compose para subir **apenas Kafka**:
 
 ```bash
-rtk docker compose up -d kafka kafka-init
+docker compose up -d kafka kafka-init
 ```
 
 Em dois terminais, inicie primeiro o engine e espere a mensagem `Engine ready`; depois inicie o gateway:
 
 ```bash
-rtk ./gradlew :engine:runEngine
-rtk ./gradlew :gateway:runGateway
+./gradlew :engine:runEngine
+./gradlew :gateway:runGateway
 ```
 
 O gateway atende em `http://localhost:8080`; as consultas internas do engine ficam em `http://127.0.0.1:8081`. Execute **um engine ativo** e mantenha **uma partição de commands**. O startup recusa tópicos commands com outra quantidade de partições.
@@ -63,7 +63,7 @@ HTTP 202 confirma publicação, e não aceitação pelo engine; rejeições cont
 Com Kafka saudável e Python 3 instalado:
 
 ```bash
-rtk proxy python3 scripts/verify-exercise.py
+python3 scripts/verify-exercise.py
 ```
 
 O script cria dois tópicos exclusivos, inicia gateway/engine em portas livres, verifica as operações e remove seus processos, tópicos e grupos ao terminar. Inclui o exemplo de 1 BTC por 500 mil BRL, matching parcial, reserva, melhoria de preço, cancelamento, rejeições, reenvios e reinício com estado vazio. Logs ficam em `build/verify_*`. Não acessa PostgreSQL nem dados de outros tópicos.
@@ -93,7 +93,7 @@ curl 'http://localhost:8080/accounts/A/balances?asset=BTC'
 curl 'http://localhost:8080/books?instrument=BTC%2FBRL'
 
 # Ler respostas; o histórico de eventos não representa o estado de uma sessão nova.
-rtk docker exec mb-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic events --from-beginning
+docker exec mb-kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic events --from-beginning
 ```
 
 Após processamento, A tem 1 BTC e 50000 BRL disponíveis; B tem 500000 BRL disponíveis. O book está vazio e as reservas foram liberadas/consumidas.

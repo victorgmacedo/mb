@@ -19,11 +19,11 @@ Reenvios são deduplicados por MsgType:ClOrdID apenas na sessão. Queda de publi
 ## Comandos
 
 ```bash
-rtk ./gradlew clean test
-rtk docker compose up -d kafka kafka-init
-rtk ./gradlew :engine:runEngine
-rtk ./gradlew :gateway:runGateway
-rtk proxy python3 scripts/verify-exercise.py
+./gradlew clean test
+docker compose up -d kafka kafka-init
+./gradlew :engine:runEngine
+./gradlew :gateway:runGateway
+python3 scripts/verify-exercise.py
 ```
 
 Documentos atuais em README.md e docs/. Preserve commits pequenos e temáticos (feat/refactor/test/docs). Não reintroduza infraestrutura distribuída sem requisito explícito. Escopo é o exercício técnico, com Kafka mantido por escolha do usuário.
